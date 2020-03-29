@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+    Copyright (C) 2016 The Android Open Source Project
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+         http://www.apache.org/licenses/LICENSE-2.0
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+-->
+<resources>
+
+    <declare-styleable name="CameraPreview">
+        <!-- 修改比例的时候，边框是否跟随比例变化-->
+        <attr name="jAdjustBounds" format="boolean" />
+
+        <!-- 是否响应手势或者点击缩放 -->
+        <attr name="jCanZoom" format="boolean" />
+        <!-- 双击屏幕放大，只有在canZoom为true时才生效 -->
+        <attr name="jZoomInOnDoubleTap" format="boolean" />
+
+        <!-- 点击屏幕是否触发区域聚焦（当摄像头支持区域聚焦才有效） -->
+        <attr name="jFocusOnTapped" format="boolean" />
+
+        <!-- 是否显示人脸识别 -->
+        <attr name="jFaceDetect" format="boolean" />
+
+        <!-- 是否显示网格 -->
+        <attr name="jShowGrid" format="boolean" />
+        <attr name="jGridStrokeWidth" format="dimension" />
+        <attr name="jGridStrokeColor" format="color" />
+
+        <!-- 当点击屏幕触发区域聚焦的时候，是否显示区域聚焦范围和动画，只有当focusOnTapped为true的时候才生效 -->
+        <attr name="jShowFocusArea" format="boolean" />
+        <!-- 区域聚焦范围 （当摄像头支持区域聚焦才有效，最大范围不能超过1000px，建议50-100dp ）-->
+        <attr name="jFocusAreaRadius" format="dimension" />
+        <attr name="jFocusAreaStrokeWidth" format="dimension" />
+        <attr name="jFocusAreaStrokeColor" format="color" />
+        <!-- 区域聚焦的圆（当摄像头支持区域聚焦才有效）-->
+        <attr name="jFocusCircleRadius" format="dimension" />
+        <attr name="jFocusCircleStrokeWidth" format="dimension" />
+        <attr name="jFocusCircleStrokeColor" format="color" />
+
+    </declare-styleable>
+
+    <declare-styleable name="CameraScanView">
+        <!-- 扫描框比例，如 16:9，不设置的时候表示全屏 -->
+        <attr name="jScanRectRatio" format="string" />
+        <!-- 扫描边框颜色 -->
+        <attr name="jBorderColor" format="color" />
+        <!-- 扫描边框高度 -->
+        <attr name="jBorderHeight" format="dimension" />
+        <!-- 扫描边框长度 -->
+        <attr name="jBorderLength" format="dimension" />
+        <!-- 是否显示扫描线 -->
+        <attr name="jShowMask" format="boolean" />
+        <!-- 扫描线颜色 -->
+        <attr name="jMaskColor" format="color" />
+        <!-- 扫描线高度 -->
+        <attr name="jMaskHeight" format="dimension" />
+        <!-- 扫描动画时长 -->
+        <attr name="jMaskDuration" format="integer" />
+        <!-- 扫描线离左右两边的距离 -->
+        <attr name="jMaskMarginLeftRight" format="dimension" />
+        <!-- 扫描线离伤心两边的距离 -->
+        <attr name="jMaskMarginTopBottom" format="dimension" />
+        <!-- 扫描框以外的阴影颜色 -->
+        <attr name="jShadowColor" format="color" />
+    </declare-styleable>
+
+</resources>

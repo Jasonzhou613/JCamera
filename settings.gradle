@@ -1,0 +1,3 @@
+rootProject.name='JCamera'
+include ':app'
+include ':jcamera'
