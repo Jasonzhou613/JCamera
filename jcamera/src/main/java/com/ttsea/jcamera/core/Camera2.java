@@ -25,6 +25,7 @@ import android.view.SurfaceHolder;
 
 import com.ttsea.jcamera.callbacks.CameraCallback;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -117,7 +118,7 @@ class Camera2 extends BaseCamera {
             if (mCallback != null) {
                 mCallback.onCameraError(CameraCallback.CODE_NO_CAMERA, errorMsg);
             }
-            CameraxLog.w(errorMsg);
+            JCameraLog.w(errorMsg);
             return;
         }
 
@@ -150,7 +151,7 @@ class Camera2 extends BaseCamera {
 
         } catch (Exception e) {
             String errorMsg = "Exception e:" + e.getMessage();
-            CameraxLog.e(errorMsg);
+            JCameraLog.e(errorMsg);
             e.printStackTrace();
             if (mCallback != null) {
                 mCallback.onCameraError(CameraCallback.CODE_OPEN_FAILED, errorMsg);
@@ -161,7 +162,7 @@ class Camera2 extends BaseCamera {
 
         //表示要打开的摄像头，已经打开
         if (mCamera != null && mCamera.getId().equals(cameraId)) {
-            CameraxLog.d(getCameraStr(mCamera) + " already opened...");
+            JCameraLog.d(getCameraStr(mCamera) + " already opened...");
             return;
         }
 
@@ -222,14 +223,14 @@ class Camera2 extends BaseCamera {
                 mHandlerThread = new HandlerThread("Camera2");
                 mHandlerThread.start();
                 mChildHandler = new Handler(mHandlerThread.getLooper());
-                CameraxLog.d("start handler thread...");
+                JCameraLog.d("start handler thread...");
             }
 
             mManager.openCamera(cameraId, mDeviceStateCallback, mChildHandler);
 
         } catch (Exception e) {
             String errorMsg = "Exception e:" + e.getMessage();
-            CameraxLog.e(errorMsg);
+            JCameraLog.e(errorMsg);
             e.printStackTrace();
             resetStatus();
 
@@ -264,7 +265,8 @@ class Camera2 extends BaseCamera {
 
     }
 
-    protected void startPreview() {
+    @Override
+    public void startPreview() {
         if (mSession == null) {
             return;
         }
@@ -283,6 +285,11 @@ class Camera2 extends BaseCamera {
                 }
             });
         }
+    }
+
+    @Override
+    public void stopPreview() {
+
     }
 
     private void createSession() {
@@ -315,7 +322,7 @@ class Camera2 extends BaseCamera {
 
         } catch (Exception e) {
             final String errorMsg = "Create capture session failed, e:" + e.getMessage();
-            CameraxLog.e("");
+            JCameraLog.e("");
             e.printStackTrace();
 
             runOnUiThread(new Runnable() {
@@ -373,7 +380,7 @@ class Camera2 extends BaseCamera {
 
         Set<AspectRatio> ratios = getSupportedAspectRatios();
         if (!ratios.contains(ratio)) {
-            CameraxLog.w(getCameraStr(mCamera) + " unsupport ratio:" + ratio);
+            JCameraLog.w(getCameraStr(mCamera) + " unsupport ratio:" + ratio);
             return false;
         }
 
@@ -385,7 +392,7 @@ class Camera2 extends BaseCamera {
 
 //        mParams.setPreviewSize(preSize.width, preSize.height);
 //        mParams.setPictureSize(picSize.width, picSize.height);
-//        CameraxLog.d("setPreviewSize:" + preSize + ", setPictureSize:" + picSize);
+//        JCameraLog.d("setPreviewSize:" + preSize + ", setPictureSize:" + picSize);
 //
 //        updateCameraParams(true);
 //        startAutoFocus();
@@ -480,17 +487,17 @@ class Camera2 extends BaseCamera {
                 mPreviewRequest.set(CaptureRequest.CONTROL_AE_MODE, FLASH_MODES.get(flash));
                 mSession.setRepeatingRequest(mPreviewRequest.build(), null, mChildHandler);
 
-                CameraxLog.d(getCameraStr(mCamera) + " set flash mode as:" + getFlashStr(flash));
+                JCameraLog.d(getCameraStr(mCamera) + " set flash mode as:" + getFlashStr(flash));
 
                 return true;
 
             } catch (Exception e) {
-                CameraxLog.e("Exception e:" + e.getMessage());
+                JCameraLog.e("Exception e:" + e.getMessage());
                 e.printStackTrace();
             }
 
         } else {
-            CameraxLog.w(getCameraStr(mCamera) + " unsupport the flash mode:" + FLASH_MODES.get(flash));
+            JCameraLog.w(getCameraStr(mCamera) + " unsupport the flash mode:" + FLASH_MODES.get(flash));
         }
 
         return false;
@@ -502,7 +509,7 @@ class Camera2 extends BaseCamera {
         try {
             ids = mManager.getCameraIdList();
         } catch (CameraAccessException e) {
-            CameraxLog.e("CameraAccessException e:" + e.getMessage());
+            JCameraLog.e("CameraAccessException e:" + e.getMessage());
             e.printStackTrace();
         }
 
@@ -510,12 +517,12 @@ class Camera2 extends BaseCamera {
     }
 
     @Override
-    public void takePhoto() {
+    public void takePhoto(File outputFile) {
 
     }
 
     @Override
-    public void startRecord() {
+    public void startRecord(File outputFile) {
 
     }
 
@@ -539,6 +546,11 @@ class Camera2 extends BaseCamera {
         return false;
     }
 
+    @Override
+    public void setOneShotPreview() {
+
+    }
+
     /**
      * 适配相机参数
      */
@@ -546,59 +558,6 @@ class Camera2 extends BaseCamera {
         if (mCamera == null) {
             return;
         }
-
-//        //设置相对应Activity的旋转角度
-//        int rotation = Surface.ROTATION_0;
-//        Activity activity = getActivity();
-//        if (activity != null && activity.getWindowManager() != null
-//                && activity.getWindowManager().getDefaultDisplay() != null) {
-//            rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
-//        }
-//        onActivityRotation(rotation);
-//
-//        //设置比例
-//        Set<AspectRatio> ratioSet = getSupportedAspectRatios();
-//        AspectRatio ratio = DEFAULT_RATIO;
-//        if (!ratioSet.contains(ratio)) {
-//            for (AspectRatio r : ratioSet) {
-//                ratio = r;
-//            }
-//        }
-//
-//        //在同比例的条件下，预览size总取最接近屏幕的尺寸
-//        Size preSize = findPreviewSize(mPreSizeMap.get(ratio));
-//        mParams.setPreviewSize(preSize.width, preSize.height);
-//
-//        //在同比例的条件下，图片size总取最大的尺寸
-//        Size picSize = mPicSizeMap.get(ratio).last();
-//        mParams.setPictureSize(picSize.width, picSize.height);
-//
-//        //设置闪光灯模式
-//        List<Integer> flashList = getSupportedFlashModes();
-//        if (flashList.contains(Constants.FLASH_AUTO)) {
-//            mParams.setFlashMode(FLASH_MODES.get(Constants.FLASH_AUTO));
-//        }
-//
-//        //设置聚焦模式
-//        List<String> supportList = mParams.getSupportedFocusModes();
-//        if (supportList == null) {
-//            supportList = new ArrayList<>();
-//        }
-//        if (supportList.contains(Camera.Parameters.FOCUS_MODE_AUTO)) {
-//            mParams.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
-//        } else if (supportList.contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)) {
-//            mParams.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
-//        } else if (supportList.contains(Camera.Parameters.FOCUS_MODE_FIXED)) {
-//            mParams.setFocusMode(Camera.Parameters.FOCUS_MODE_FIXED);
-//        }
-//
-//        CameraxLog.d("adjustCameraParams, ratio:" + ratio
-//                + ", preSize:" + preSize
-//                + ", picSize:" + picSize
-//                + ", flash:" + mParams.getFlashMode()
-//                + ", focus:" + mParams.getFocusMode());
-//
-//        updateCameraParams(false);
     }
 
     /**
@@ -634,7 +593,7 @@ class Camera2 extends BaseCamera {
         if (mHandlerThread != null) {
             mHandlerThread.quitSafely();
             mHandlerThread = null;
-            CameraxLog.d("Handler thread quit safely...");
+            JCameraLog.d("Handler thread quit safely...");
         }
 
         mPreSizeMap.clear();
@@ -693,7 +652,7 @@ class Camera2 extends BaseCamera {
         public void onOpened(@NonNull CameraDevice camera) {
             mCamera = camera;
 
-            CameraxLog.d("Opened camera, " + getCameraStr(camera) + "\n"
+            JCameraLog.d("Opened camera, " + getCameraStr(camera) + "\n"
                     + "mPreSizeMap:" + mPreSizeMap + "\n"
                     + "mPicSizeMap:" + mPicSizeMap);
 
@@ -711,14 +670,14 @@ class Camera2 extends BaseCamera {
 
         @Override
         public void onDisconnected(@NonNull CameraDevice camera) {
-            CameraxLog.w(getCameraStr(camera) + " is disconnected...");
+            JCameraLog.w(getCameraStr(camera) + " is disconnected...");
 
             releaseCamera();
         }
 
         @Override
         public void onClosed(@NonNull CameraDevice camera) {
-            CameraxLog.d("release " + getCameraStr(camera));
+            JCameraLog.d("release " + getCameraStr(camera));
             resetStatus();
 
             runOnUiThread(new Runnable() {
@@ -734,7 +693,7 @@ class Camera2 extends BaseCamera {
 
         @Override
         public void onError(@NonNull CameraDevice camera, final int error) {
-            CameraxLog.e("onError " + getCameraStr(camera) + ", errorCode:" + error);
+            JCameraLog.e("onError " + getCameraStr(camera) + ", errorCode:" + error);
             resetStatus();
 
             runOnUiThread(new Runnable() {

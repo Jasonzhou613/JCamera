@@ -3,15 +3,23 @@ package com.ttsea.jcamera.core;
 import android.app.Activity;
 import android.content.Context;
 import android.content.ContextWrapper;
+import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import android.hardware.Camera;
+import android.media.CamcorderProfile;
+import android.media.MediaRecorder;
+import android.os.Build;
+import android.os.Environment;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.util.SparseIntArray;
 import android.view.Surface;
+import android.view.View;
 
 import com.ttsea.jcamera.annotation.Facing;
 import com.ttsea.jcamera.callbacks.CameraCallback;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -27,24 +35,28 @@ class Camera1 extends BaseCamera {
     private final AspectRatio DEFAULT_RATIO = AspectRatio.parse("16:9");
 
     private Context mContext;
+
     private Camera mCamera;//当前Camera
     private int mCameraId;//当前Camera Id
+    private Camera.Parameters mParams;
+
+    private MediaRecorder mMediaRecorder;//用于录音
+
     private ISurface iSurface;//对应的SurfaceView
     private IMaskView iMaskView;//SurfaceViews上面的view
     private CameraCallback mCallback;
-    private Camera.Parameters mParams;
-    private Handler mHandler;
+
+    private HandlerThread mHandlerThread;
+    private Handler mChildHandler;
 
     //记录摄像头所支持的预览size
     private final SizeMap mPicSizeMap = new SizeMap();
     //记录摄像头所支持的图片size
     private final SizeMap mPreSizeMap = new SizeMap();
-    //记录是否正在拍照
-    private final AtomicBoolean isInCaptureProgress = new AtomicBoolean(false);
-    //记录是否正在录像
-    private final AtomicBoolean isInRecordInProgress = new AtomicBoolean(false);
+    //记录摄像头是否正在使用，正在拍照或者录像都代表真正使用
+    private final AtomicBoolean isCameraInUsing = new AtomicBoolean(false);
     //记录是否正在预览，默认:false
-    private boolean isShowingPreview = false;
+    private final AtomicBoolean isShowingPreview = new AtomicBoolean(false);
 
     private static final SparseIntArray FACING_MAP = new SparseIntArray();
 
@@ -69,8 +81,6 @@ class Camera1 extends BaseCamera {
         this.mContext = context;
         this.iSurface = iSurface;
         this.iMaskView = iMaskView;
-
-        mHandler = new Handler();
     }
 
     @Override
@@ -84,33 +94,67 @@ class Camera1 extends BaseCamera {
     }
 
     @Override
-    public void openCamera(@Facing int facing) {
+    public void openCamera(@Facing final int facing) {
+        if (mHandlerThread == null) {
+            mHandlerThread = new HandlerThread("Camera1");
+            mHandlerThread.start();
+            mChildHandler = new Handler(mHandlerThread.getLooper());
+            JCameraLog.d("Start a new handler thread:(" + mHandlerThread.getName()
+                    + ":" + mHandlerThread.getId() + ")");
+        }
+
+        mChildHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                openCameraInThread(facing);
+            }
+        });
+    }
+
+    /**
+     * see {@link #openCamera(int)}
+     */
+    private void openCameraInThread(@Facing int facing) {
         if (!Utils.checkCameraHardware(mContext)) {
             //设备不支持摄像头（或者没有摄像头）
-            String errorMsg = "Device has no camera.";
+            final String errorMsg = "Device has no camera.";
             if (mCallback != null) {
-                mCallback.onCameraError(CameraCallback.CODE_NO_CAMERA, errorMsg);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mCallback.onCameraError(CameraCallback.CODE_NO_CAMERA, errorMsg);
+                    }
+                });
             }
-            CameraxLog.d(errorMsg);
+            resetStatus();
+            JCameraLog.d(errorMsg);
             return;
         }
 
-        if (isInCaptureProgress.get() || isInRecordInProgress.get()) {
-            CameraxLog.d(getCameraStr(mCameraId) + " is in using, can not open another camera.");
+        if (isCameraInUsing.get()) {
+            JCameraLog.d(getCameraStr(mCameraId) + " is in using, can not open another camera.");
             return;
         }
 
-        int cameraId = FACING_MAP.get(facing, DEFAULT_CAMERA_ID);
+        final int cameraId = FACING_MAP.get(facing, DEFAULT_CAMERA_ID);
 
         //表示要打开的摄像头，已经打开
         if (mCamera != null && mCameraId == cameraId) {
-            CameraxLog.d(getCameraStr(mCameraId) + " already opened...");
+            JCameraLog.d(getCameraStr(mCameraId) + " already opened...");
             return;
         }
 
         //释放已经打开的摄像头
         if (mCamera != null) {
-            releaseCamera();
+            mChildHandler.removeCallbacksAndMessages(null);
+
+            isCameraInUsing.set(false);
+            isShowingPreview.set(false);
+
+            mCamera.release();
+            mCameraId = DEFAULT_CAMERA_ID;
+            mCamera = null;
+            mParams = null;
         }
 
         try {
@@ -118,7 +162,6 @@ class Camera1 extends BaseCamera {
                 //打开默认的摄像头
                 mCamera = Camera.open();
                 mCameraId = cameraId;
-
             } else {
                 //打开指定摄像头
                 mCamera = Camera.open(cameraId);
@@ -126,24 +169,38 @@ class Camera1 extends BaseCamera {
             }
 
         } catch (Exception e) {
-            String errorMsg = "Exception e:" + e.getMessage() + ", " + getCameraStr(cameraId);
-            CameraxLog.e(errorMsg);
+            final String errorMsg = "Exception e:" + e.getMessage() + ", " + getCameraStr(cameraId);
+            JCameraLog.e(errorMsg);
             e.printStackTrace();
-            mCamera = null;
-            mCameraId = DEFAULT_CAMERA_ID;
+
+            resetStatus();
 
             if (mCallback != null) {
-                mCallback.onCameraError(CameraCallback.CODE_OPEN_FAILED, errorMsg);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mCallback.onCameraError(CameraCallback.CODE_OPEN_FAILED, errorMsg);
+                    }
+                });
             }
             return;
         }
 
         if (mCamera == null) {
-            String errorMsg = "Open camera failed, " + getCameraStr(cameraId);
-            CameraxLog.e(errorMsg);
+            final String errorMsg = "Open camera failed, " + getCameraStr(cameraId);
+            JCameraLog.e(errorMsg);
+
+            resetStatus();
+
             if (mCallback != null) {
-                mCallback.onCameraError(CameraCallback.CODE_OPEN_FAILED, errorMsg);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mCallback.onCameraError(CameraCallback.CODE_OPEN_FAILED, errorMsg);
+                    }
+                });
             }
+
             return;
         }
 
@@ -163,7 +220,7 @@ class Camera1 extends BaseCamera {
             mPicSizeMap.addSize(s);
         }
 
-        CameraxLog.d("Opened camera, " + getCameraStr(cameraId) + "\n"
+        JCameraLog.d("Opened camera, " + getCameraStr(cameraId) + "\n"
                 + "mPreSizeMap:" + mPreSizeMap + "\n"
                 + "mPicSizeMap:" + mPicSizeMap);
 
@@ -175,7 +232,12 @@ class Camera1 extends BaseCamera {
         }
 
         if (mCallback != null) {
-            mCallback.onCameraOpened();
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    mCallback.onCameraOpened();
+                }
+            });
         }
     }
 
@@ -185,29 +247,50 @@ class Camera1 extends BaseCamera {
             return;
         }
 
-        CameraxLog.d("release " + getCameraStr(mCameraId));
         unregisterSensor();
-        iMaskView.clearAnimation();
-        isShowingPreview = false;
+
         mCamera.release();
-        mCamera = null;
-        mParams = null;
-        mCameraId = DEFAULT_CAMERA_ID;
-        if (mCallback != null) {
-            mCallback.onCameraClosed();
-        }
+        resetStatus();
+        JCameraLog.d("release " + getCameraStr(mCameraId));
+
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                iMaskView.clearAnimation();
+                if (mCallback != null) {
+                    mCallback.onCameraClosed();
+                }
+            }
+        });
     }
 
     @Override
     protected void startAutoFocus() {
-        if (mCamera == null) {
+        if (mChildHandler == null || !isShowingPreview.get()) {
+            return;
+        }
+        if (mChildHandler.getLooper().getThread() == Thread.currentThread()) {
+            startAutoFocusInThread();
+        } else {
+            mChildHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    startAutoFocusInThread();
+                }
+            });
+        }
+    }
+
+    /** 在子线程中启动自动聚焦 */
+    private void startAutoFocusInThread() {
+        if (mCamera == null || mChildHandler == null || isCameraInUsing.get()) {
             return;
         }
 
         List<String> list = mParams.getSupportedFocusModes();
         //不支持自动聚焦
         if (list == null || list.isEmpty()) {
-            CameraxLog.w(getCameraStr(mCameraId) + " not support focus.");
+            JCameraLog.w(getCameraStr(mCameraId) + " not support focus.");
             return;
         }
 
@@ -217,38 +300,44 @@ class Camera1 extends BaseCamera {
         if (focusMode.equals(Camera.Parameters.FOCUS_MODE_INFINITY)
                 || focusMode.equals(Camera.Parameters.FOCUS_MODE_FIXED)
                 || focusMode.equals(Camera.Parameters.FOCUS_MODE_EDOF)) {
-            CameraxLog.d("focusMode:" + focusMode + ", should not call autoFocus.");
+            JCameraLog.d("focusMode:" + focusMode + ", should not call autoFocus.");
             return;
         }
 
         //先取消正在执行的聚焦动作
         cancelAutoFocus();
-        CameraxLog.d("start auto focus...");
+        JCameraLog.d("start auto focus...");
+
         //开始聚焦
-        mCamera.autoFocus(autoFocusCallback);
+        try {
+            mCamera.autoFocus(autoFocusCallback);
+
+        } catch (Exception e) {
+            JCameraLog.e("Exception e:" + e.getMessage());
+            e.printStackTrace();
+            mChildHandler.postDelayed(autoFocusRunnable, 500);
+        }
     }
 
     /**
      * 取消自动聚焦
      */
     private void cancelAutoFocus() {
-        if (mCamera == null) {
+        if (mCamera == null || mChildHandler == null) {
             return;
         }
 
-        mHandler.removeCallbacks(autoFocusRunnable);
+        mChildHandler.removeCallbacks(autoFocusRunnable);
         try {
             mCamera.cancelAutoFocus();
         } catch (Exception e) {
             //ignore error
-            CameraxLog.w("Exception e:" + e.getMessage());
+            JCameraLog.w("Exception e:" + e.getMessage());
         }
     }
 
-    /**
-     * 开启预览
-     */
-    protected void startPreview() {
+    @Override
+    public void startPreview() {
         startPreview(true);
     }
 
@@ -262,31 +351,47 @@ class Camera1 extends BaseCamera {
             return;
         }
 
-        CameraxLog.d("startPreview...");
+        JCameraLog.d("startPreview...");
         //开始预览，开始自动聚焦
-        isShowingPreview = true;
+        isShowingPreview.set(true);
         mCamera.startPreview();
+
+        if (mCallback != null) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    mCallback.onStartPreview();
+                }
+            });
+        }
+
         if (startAutoFocus) {
             startAutoFocus();
         }
     }
 
-    /**
-     * 停止预览
-     */
-    protected void stopPreview() {
+    @Override
+    public void stopPreview() {
         if (mCamera == null) {
             return;
         }
 
-        CameraxLog.d("stopPreview...");
-        isShowingPreview = false;
+        JCameraLog.d("stopPreview...");
+        isShowingPreview.set(false);
         mCamera.stopPreview();
+        if (mCallback != null) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    mCallback.onStopPreview();
+                }
+            });
+        }
     }
 
     @Override
     public int getFacing() {
-        int index = FACING_MAP.valueAt(mCameraId);
+        int index = FACING_MAP.indexOfValue(mCameraId);
         if (index > -1) {
             return FACING_MAP.keyAt(index);
         }
@@ -295,7 +400,7 @@ class Camera1 extends BaseCamera {
 
     @Override
     public boolean isShowingPreview() {
-        return isShowingPreview;
+        return isShowingPreview.get();
     }
 
     @Override
@@ -315,13 +420,18 @@ class Camera1 extends BaseCamera {
 
     @Override
     public boolean setAspectRatio(AspectRatio ratio) {
+        if (isCameraInUsing.get()) {
+            JCameraLog.d(getCameraStr(mCameraId) + " is in using, can not set ratio.");
+            return false;
+        }
+
         if (ratio.equals(getAspectRatio())) {
             return true;
         }
 
         Set<AspectRatio> ratios = getSupportedAspectRatios();
         if (!ratios.contains(ratio)) {
-            CameraxLog.w(getCameraStr(mCameraId) + " unsupport ratio:" + ratio);
+            JCameraLog.w(getCameraStr(mCameraId) + " unsupport ratio:" + ratio);
             return false;
         }
 
@@ -333,7 +443,7 @@ class Camera1 extends BaseCamera {
 
         mParams.setPreviewSize(preSize.width, preSize.height);
         mParams.setPictureSize(picSize.width, picSize.height);
-        CameraxLog.d("setPreviewSize:" + preSize + ", setPictureSize:" + picSize);
+        JCameraLog.d("setPreviewSize:" + preSize + ", setPictureSize:" + picSize);
 
         updateCameraParams(true);
         startAutoFocus();
@@ -360,26 +470,8 @@ class Camera1 extends BaseCamera {
             return;
         }
 
-        int degrees = 0;
-        switch (rotation) {
-            case Surface.ROTATION_0:
-                degrees = 90;
-                break;
-
-            case Surface.ROTATION_90:
-                degrees = 0;
-                break;
-
-            case Surface.ROTATION_180:
-                degrees = 270;
-                break;
-
-            case Surface.ROTATION_270:
-                degrees = 180;
-                break;
-        }
-
-        CameraxLog.d("onRotation, rotation:" + rotation + ", degrees:" + degrees);
+        int degrees = getCameraRotationDegrees(rotation);
+        JCameraLog.d("onRotation, rotation:" + rotation + ", degrees:" + degrees);
         mCamera.setDisplayOrientation(degrees);
 
         //前置摄像头和后置摄像头的旋转角度相对屏幕来说是不一样的
@@ -440,6 +532,11 @@ class Camera1 extends BaseCamera {
             return false;
         }
 
+        if (isCameraInUsing.get()) {
+            JCameraLog.d(getCameraStr(mCameraId) + " is in using, can not set flash.");
+            return false;
+        }
+
         if (getFlashMode() == flash) {
             return true;
         }
@@ -452,7 +549,7 @@ class Camera1 extends BaseCamera {
             return true;
 
         } else {
-            CameraxLog.w(getCameraStr(mCameraId) + " unsupport the flash mode:" + FLASH_MODES.get(flash));
+            JCameraLog.w(getCameraStr(mCameraId) + " unsupport the flash mode:" + FLASH_MODES.get(flash));
             return false;
         }
     }
@@ -463,20 +560,51 @@ class Camera1 extends BaseCamera {
     }
 
     @Override
-    public void takePhoto() {
-        if (mCamera == null || !isShowingPreview) {
-            if (mCallback != null) {
-                mCallback.onPictureTaken(null);
-            }
+    public void takePhoto(final File outputFile) {
+        if (mChildHandler.getLooper().getThread() == Thread.currentThread()) {
+            takePhotoInThread(outputFile);
+
+        } else {
+            mChildHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    takePhotoInThread(outputFile);
+                }
+            });
+        }
+    }
+
+    /** 在子线程中拍照 */
+    private void takePhotoInThread(final File outputFile) {
+        if (mCamera == null || !isShowingPreview.get()) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (mCallback != null) {
+                        mCallback.onPictureTaken(null, "mCamera is null.");
+                    }
+                }
+            });
             return;
         }
 
-        CameraxLog.d("takePhoto...");
+        JCameraLog.d("takePhoto...");
+
+        //如果outputFile为空，则取默认文件
+        File tmpFile = outputFile;
+        if (tmpFile == null) {
+            tmpFile = new File(mContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
+                    "IMG_" + Utils.getCurrentTime("yyyyMMddHHmmss") + ".jpg");
+        }
+        final File picFile = tmpFile;
+        if (!picFile.getParentFile().exists()) {
+            picFile.getParentFile().mkdirs();
+        }
 
         Camera.ShutterCallback shutter = new Camera.ShutterCallback() {
             @Override
             public void onShutter() {
-                isInCaptureProgress.set(true);
+                isCameraInUsing.set(true);
                 //这里可以响应快门声
             }
         };
@@ -485,13 +613,34 @@ class Camera1 extends BaseCamera {
             @Override
             public void onPictureTaken(byte[] data, Camera camera) {
                 //拍完照，会自动停止预览
-                isShowingPreview = false;
-
+                isShowingPreview.set(false);
+                isCameraInUsing.set(false);
                 startPreview(false);
-                isInCaptureProgress.set(false);
 
-                if (mCallback != null) {
-                    mCallback.onPictureTaken(data);
+                try {
+                    //将data保存到文件中
+                    ByteUtils.saveData(data, picFile);
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (mCallback != null) {
+                                mCallback.onPictureTaken(picFile, null);
+                            }
+                        }
+                    });
+
+                } catch (final Exception e) {
+                    JCameraLog.e("Exception e:" + e.getMessage());
+                    e.printStackTrace();
+
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (mCallback != null) {
+                                mCallback.onPictureTaken(null, e.getMessage());
+                            }
+                        }
+                    });
                 }
             }
         };
@@ -499,25 +648,97 @@ class Camera1 extends BaseCamera {
         try {
             mCamera.takePicture(shutter, null, picCallback);
 
-        } catch (Exception e) {
-            CameraxLog.e("Exception e:" + e.getMessage());
+        } catch (final Exception e) {
+            JCameraLog.e("Exception e:" + e.getMessage());
             e.printStackTrace();
-            if (mCallback != null) {
-                mCallback.onPictureTaken(null);
-            }
+
+            isShowingPreview.set(false);
+            isCameraInUsing.set(false);
+
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (mCallback != null) {
+                        mCallback.onPictureTaken(null, e.getMessage());
+                    }
+                }
+            });
         }
     }
 
     @Override
-    public void startRecord() {
-        isInCaptureProgress.set(true);
-        CameraxLog.d("startRecord...");
+    public void startRecord(File outputFile) {
+        if (mCamera == null || isCameraInUsing.get()) {
+            return;
+        }
+        JCameraLog.d("startRecord...");
+
+        if (!outputFile.getParentFile().exists()) {
+            outputFile.getParentFile().mkdirs();
+        }
+
+        try {
+            mMediaRecorder = new MediaRecorder();
+
+            mParams.setRecordingHint(true);
+            updateCameraParams(false);
+            mCamera.unlock();
+            mMediaRecorder.setCamera(mCamera);
+
+            //设置音源
+            mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.CAMCORDER);
+            //设置视频源
+            mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
+
+            CamcorderProfile profile = getCamcorderProfile();
+            profile.videoBitRate = 2000000;
+            profile.videoFrameRate = 24;
+            mMediaRecorder.setProfile(profile);
+            JCameraLog.d("CamcorderProfile:" + getCamcorderProfileStr(profile));
+
+            //设置输出文件
+            mMediaRecorder.setOutputFile(outputFile.getAbsolutePath());
+
+            //设置旋转角度
+            int rotation = Utils.getRotation((View) iMaskView);
+            int degrees = getCameraRotationDegrees(rotation);
+            //前置摄像头和后置摄像头的旋转角度相对屏幕来说是不一样的
+            if (getFacing() == Constants.FACING_FRONT) {
+                degrees = (degrees + 180) % 360;
+            }
+            mMediaRecorder.setOrientationHint(degrees);
+
+            mMediaRecorder.prepare();
+            mMediaRecorder.start();
+            isCameraInUsing.set(true);
+
+        } catch (Exception e) {
+            JCameraLog.e("Exception e:" + e.getMessage());
+            e.printStackTrace();
+
+            stopRecord();
+        }
     }
 
     @Override
     public void stopRecord() {
-        isInCaptureProgress.set(false);
-        CameraxLog.d("stopRecord...");
+        if (mCamera == null) {
+            return;
+        }
+
+        try {
+            if (mMediaRecorder != null) {
+                mMediaRecorder.stop();
+                mMediaRecorder.release();
+            }
+        } catch (Exception e) {
+            //ignore error
+        }
+
+        isCameraInUsing.set(false);
+        mCamera.lock();
+
+        JCameraLog.d("stopRecord...");
     }
 
     @Override
@@ -534,19 +755,19 @@ class Camera1 extends BaseCamera {
 
     @Override
     public boolean onSurfaceTapped(float x, float y) {
-        if (mCamera == null || !isShowingPreview) {
+        if (mCamera == null || !isShowingPreview.get()) {
             return false;
         }
 
         //不支持区域聚焦
         if (mParams.getMaxNumFocusAreas() <= 0) {
-            CameraxLog.w(getCameraStr(mCameraId) + " not support Area focus.");
+            JCameraLog.w(getCameraStr(mCameraId) + " not support Area focus.");
             return false;
         }
 
         List<String> modesList = mParams.getSupportedFocusModes();
         if (modesList == null || modesList.isEmpty()) {
-            CameraxLog.w(getCameraStr(mCameraId) + " has no focus mode.");
+            JCameraLog.w(getCameraStr(mCameraId) + " has no focus mode.");
             return false;
         }
 
@@ -559,7 +780,7 @@ class Camera1 extends BaseCamera {
         }
 
         if (Utils.isEmpty(focusMode)) {
-            CameraxLog.w(getCameraStr(mCameraId) + " not support MACRO/AUTO focus mode.");
+            JCameraLog.w(getCameraStr(mCameraId) + " not support MACRO/AUTO focus mode.");
             return false;
         }
 
@@ -582,17 +803,28 @@ class Camera1 extends BaseCamera {
         }
         updateCameraParams(flag);
 
-        CameraxLog.d("start focus areas:" + area.rect);
+        JCameraLog.d("start focus areas:" + area.rect);
+
         //开始聚焦
-        mCamera.autoFocus(autoFocusCallback);
+        try {
+            mChildHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    mCamera.autoFocus(autoFocusCallback);
+                }
+            });
+
+        } catch (Exception e) {
+            //ignore error
+        }
 
         return true;
     }
 
     @Override
     public boolean zoomIn(float value) {
-        //不支持缩放
-        if (!mParams.isZoomSupported()) {
+        //不支持缩放，或者摄像头正在使用
+        if (!mParams.isZoomSupported() || isCameraInUsing.get()) {
             return false;
         }
 
@@ -645,8 +877,8 @@ class Camera1 extends BaseCamera {
 
     @Override
     public boolean zoomOut(float value) {
-        //不支持缩放
-        if (!mParams.isZoomSupported()) {
+        //不支持缩放，或者摄像头正在使用
+        if (!mParams.isZoomSupported() || isCameraInUsing.get()) {
             return false;
         }
 
@@ -696,6 +928,45 @@ class Camera1 extends BaseCamera {
         startAutoFocus();
 
         return true;
+    }
+
+    @Override
+    public void setOneShotPreview() {
+        if (mCamera == null || mParams == null) {
+            return;
+        }
+
+        try {
+            mCamera.setOneShotPreviewCallback(new Camera.PreviewCallback() {
+                @Override
+                public void onPreviewFrame(byte[] data, Camera camera) {
+                    if (mCallback != null && mCamera != null) {
+                        if (data == null) {
+                            mCallback.oneShotFrameData(null, ImageFormat.UNKNOWN, 0, 0);
+                            return;
+                        }
+
+                        int format = mParams.getPreviewFormat();
+                        Camera.Size size = mParams.getPreviewSize();
+
+                        int ration = Utils.getRotation((View) iMaskView);
+                        if (ration == 0 || ration == 2) {
+                            data = rotateYUV420Degree90(data, size.width, size.height);
+                            mCallback.oneShotFrameData(data, format, size.height, size.width);
+                            JCameraLog.d("onPreviewFrame, format:" + format
+                                    + ", size:" + size.height + ":" + size.width);
+
+                        } else {
+                            mCallback.oneShotFrameData(data, format, size.width, size.height);
+                            JCameraLog.d("onPreviewFrame, format:" + format
+                                    + ", size:" + size.width + ":" + size.height);
+                        }
+                    }
+                }
+            });
+        } catch (Exception e) {
+            //ignore error
+        }
     }
 
     /**
@@ -751,7 +1022,11 @@ class Camera1 extends BaseCamera {
             mParams.setFocusMode(Camera.Parameters.FOCUS_MODE_FIXED);
         }
 
-        CameraxLog.d("adjustCameraParams, ratio:" + ratio
+        if (Build.VERSION.SDK_INT > 14 && mParams.isVideoStabilizationSupported()) {
+            mParams.setVideoStabilization(true);
+        }
+
+        JCameraLog.d("adjustCameraParams, ratio:" + ratio
                 + ", preSize:" + preSize
                 + ", picSize:" + picSize
                 + ", flash:" + mParams.getFlashMode()
@@ -771,14 +1046,19 @@ class Camera1 extends BaseCamera {
             return;
         }
 
-        mCamera.setParameters(mParams);
+        try {
+            mCamera.setParameters(mParams);
+        } catch (Exception e) {
+            JCameraLog.w("Exception e:" + e.getMessage());
+            e.printStackTrace();
+        }
 
-        if (rePreview && isShowingPreview) {
+        if (rePreview && isShowingPreview.get()) {
             mCamera.stopPreview();
             mCamera.startPreview();
-            CameraxLog.d("updateCameraParams, rePreview:" + true);
+            JCameraLog.d("updateCameraParams, rePreview:" + true);
         } else {
-            CameraxLog.d("updateCameraParams, rePreview:" + false);
+            JCameraLog.d("updateCameraParams, rePreview:" + false);
         }
     }
 
@@ -828,7 +1108,7 @@ class Camera1 extends BaseCamera {
             }
 
         } catch (Exception e) {
-            CameraxLog.e("IOException e:" + e.getMessage());
+            JCameraLog.e("IOException e:" + e.getMessage());
             e.printStackTrace();
             if (mCallback != null) {
                 mCallback.onCameraError(CameraCallback.CODE_START_PREVIEW_FAILED, e.getMessage());
@@ -842,6 +1122,93 @@ class Camera1 extends BaseCamera {
             mCallback.onCameraError(CameraCallback.CODE_START_PREVIEW_FAILED, errorMsg);
         }
         return false;
+    }
+
+    /**
+     * 重设一些常量的状态
+     */
+    private void resetStatus() {
+        if (mChildHandler != null) {
+            mChildHandler.removeCallbacksAndMessages(null);
+            mChildHandler = null;
+        }
+
+        if (mHandlerThread != null) {
+            JCameraLog.d("Quit handler thread:(" + mHandlerThread.getName()
+                    + ":" + mHandlerThread.getId() + ")");
+            mHandlerThread.quit();
+            mHandlerThread = null;
+        }
+
+        mPreSizeMap.clear();
+        mPicSizeMap.clear();
+
+        isCameraInUsing.set(false);
+        isShowingPreview.set(false);
+
+        if (mCamera != null) {
+            mCamera.release();
+        }
+        mCameraId = DEFAULT_CAMERA_ID;
+        mCamera = null;
+        mParams = null;
+    }
+
+    /**
+     * 录像是，从到到低，获取摄像头所支持的最好的设置文件
+     *
+     * @return CamcorderProfile
+     */
+    private CamcorderProfile getCamcorderProfile() {
+        int cameraId = Camera.CameraInfo.CAMERA_FACING_BACK;
+        if (mCameraId == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+            cameraId = mCameraId;
+        }
+
+        List<Integer> list = new ArrayList<>();
+        if (Build.VERSION.SDK_INT >= 21) {
+            // list.add(CamcorderProfile.QUALITY_2160P);
+        }
+        list.add(CamcorderProfile.QUALITY_1080P);
+        list.add(CamcorderProfile.QUALITY_720P);
+        list.add(CamcorderProfile.QUALITY_480P);
+        list.add(CamcorderProfile.QUALITY_HIGH);
+        list.add(CamcorderProfile.QUALITY_LOW);
+
+        for (int i = 0; i < list.size(); i++) {
+            int quality = list.get(i);
+            if (CamcorderProfile.hasProfile(cameraId, quality)) {
+                return CamcorderProfile.get(cameraId, quality);
+            }
+        }
+
+        return CamcorderProfile.get(cameraId, CamcorderProfile.QUALITY_HIGH);
+    }
+
+    /**
+     * 将CamcorderProfile里面的常量拼接成String
+     *
+     * @param profile CamcorderProfile
+     * @return String
+     */
+    private String getCamcorderProfileStr(CamcorderProfile profile) {
+        if (profile == null) {
+            return "";
+        }
+        String msg = "duration=" + profile.duration +
+                ", quality=" + profile.quality +
+                ", fileFormat=" + profile.fileFormat +
+                ", videoCodec=" + profile.videoCodec +
+                ", videoBitRate=" + profile.videoBitRate +
+                ", videoFrameRate=" + profile.videoFrameRate +
+                ", videoWidth=" + profile.videoFrameWidth +
+                ", videoHeight=" + profile.videoFrameHeight +
+                ", audioCodec=" + profile.audioCodec +
+                ", audioBitRate=" + profile.audioBitRate +
+                ", audioSampleRate=" + profile.audioSampleRate +
+                ", audioChannels=" + profile.audioChannels;
+
+        return "profile{" + msg + "}";
     }
 
     /**
@@ -939,13 +1306,19 @@ class Camera1 extends BaseCamera {
     private Camera.AutoFocusCallback autoFocusCallback = new Camera.AutoFocusCallback() {
         @Override
         public void onAutoFocus(boolean success, Camera camera) {
-            CameraxLog.d("onFocus, success:" + success);
+            JCameraLog.d("onFocus, success:" + success);
             if (success) {
-                mHandler.removeCallbacks(autoFocusRunnable);
-                iMaskView.clearAnimation();
+                mChildHandler.removeCallbacks(autoFocusRunnable);
+
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        iMaskView.clearAnimation();
+                    }
+                });
 
             } else {
-                mHandler.postDelayed(autoFocusRunnable, 1000);
+                mChildHandler.postDelayed(autoFocusRunnable, 1000);
             }
         }
     };

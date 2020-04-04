@@ -13,13 +13,17 @@ import com.ttsea.jcamera.R;
 import com.ttsea.jcamera.annotation.Flash;
 import com.ttsea.jcamera.callbacks.CameraCallback;
 
+import java.io.File;
 import java.util.List;
 import java.util.Set;
 
-public class CameraPreview extends FrameLayout {
+import androidx.annotation.Nullable;
+
+public class CameraPreview extends FrameLayout implements CameraCallback {
     private Context mContext;
     private ICamera iCamera;
     private OrientationDetector mOrientationDetector;
+    private CameraCallback mCallback;
 
     /** 当比例变化的时候，view的边框是否跟随比例变化 */
     private boolean adjustBounds;
@@ -30,7 +34,7 @@ public class CameraPreview extends FrameLayout {
      * @param enable true为开启log，false为关闭log
      */
     public static void enableLog(boolean enable) {
-        CameraxLog.enableLog(enable);
+        JCameraLog.enableLog(enable);
     }
 
     public CameraPreview(Context context) {
@@ -65,7 +69,7 @@ public class CameraPreview extends FrameLayout {
 //        }
         ISurface iSurface = new SurfaceViewPreview(mContext);
 
-        MaskViewPic iMaskView = new MaskViewPic(mContext);
+        MaskPicView iMaskView = new MaskPicView(mContext);
 
         if (Build.VERSION.SDK_INT < 21 || !Utils.cameraSupportHighLevel(mContext)) {
             iCamera = new Camera1(mContext, iSurface, iMaskView);
@@ -75,6 +79,7 @@ public class CameraPreview extends FrameLayout {
             iCamera = new Camera2Api23(mContext, iSurface, iMaskView);
         }
 
+        iCamera.setCameraCallback(this);
         iSurface.setICamera(iCamera);
         iMaskView.setICamera(iCamera);
 
@@ -179,7 +184,7 @@ public class CameraPreview extends FrameLayout {
         }
 
         AspectRatio ratio = getAspectRatio();
-        int rotation = Utils.getDisplay(this).getRotation();
+        int rotation = Utils.getRotation(this);
         if (rotation % Surface.ROTATION_180 == 0) {
             ratio = ratio.inverse();
         }
@@ -210,6 +215,66 @@ public class CameraPreview extends FrameLayout {
         }
     }
 
+    @Override
+    public void onCameraOpened() {
+        if (mCallback != null) {
+            mCallback.onCameraOpened();
+        }
+    }
+
+    @Override
+    public void onCameraClosed() {
+        if (mCallback != null) {
+            mCallback.onCameraClosed();
+        }
+    }
+
+    @Override
+    public void onCameraError(int errorCode, String msg) {
+        if (mCallback != null) {
+            mCallback.onCameraError(errorCode, msg);
+        }
+    }
+
+    @Override
+    public void onStartPreview() {
+        if (mCallback != null) {
+            mCallback.onStartPreview();
+        }
+    }
+
+    @Override
+    public void onStopPreview() {
+        if (mCallback != null) {
+            mCallback.onStopPreview();
+        }
+    }
+
+    @Override
+    public void onPictureTaken(@Nullable File picFile, String errorMsg) {
+        if (mCallback != null) {
+            mCallback.onPictureTaken(picFile, errorMsg);
+        }
+    }
+
+    @Override
+    public void oneShotFrameData(@Nullable byte[] data, int format, int width, int height) {
+        if (mCallback != null) {
+            mCallback.oneShotFrameData(data, format, width, height);
+        }
+    }
+
+    @Override
+    public void everyFrameData(@Nullable byte[] data, int format, int width, int height) {
+        if (mCallback != null) {
+            mCallback.everyFrameData(data, format, width, height);
+        }
+    }
+
+    public void setCameraCallback(CameraCallback callback) {
+        mCallback = callback;
+    }
+
     //////////////////////////////////////////////////////////////////////////////////////////////
     // ---------------------------- 以下是setter代码 ----------------------------
     //////////////////////////////////////////////////////////////////////////////////////////////
@@ -226,15 +291,6 @@ public class CameraPreview extends FrameLayout {
     //////////////////////////////////////////////////////////////////////////////////////////////
     // ---------------------------- 以下代码是间接调用iCamera ----------------------------
     //////////////////////////////////////////////////////////////////////////////////////////////
-
-    /**
-     * see {@link ICamera#setCameraCallback(CameraCallback)}
-     *
-     * @param callback see {@link ICamera#setCameraCallback(CameraCallback)}
-     */
-    public void setCameraCallback(CameraCallback callback) {
-        iCamera.setCameraCallback(callback);
-    }
 
     /**
      * see {@link ICamera#openCamera()}
@@ -347,17 +403,17 @@ public class CameraPreview extends FrameLayout {
     }
 
     /**
-     * see {@link ICamera#takePhoto()}
+     * see {@link ICamera#takePhoto(File)} ()}
      */
-    public void takePhoto() {
-        iCamera.takePhoto();
+    public void takePhoto(File outputFile) {
+        iCamera.takePhoto(outputFile);
     }
 
     /**
-     * see {@link ICamera#startRecord()} ()}
+     * see {@link ICamera#startRecord(File)}
      */
-    public void startRecord() {
-        iCamera.startRecord();
+    public void startRecord(File outputFile) {
+        iCamera.startRecord(outputFile);
     }
 
     /**

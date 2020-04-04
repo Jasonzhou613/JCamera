@@ -11,7 +11,7 @@ import androidx.annotation.NonNull;
 /**
  * 拍照时的view，该view会放在SurfaceView的上面
  */
-class MaskViewPic extends BaseMaskView {
+class MaskPicView extends BaseMaskView {
     //网格数
     private final int gridCount = 3;
     //是否显示网格
@@ -19,7 +19,7 @@ class MaskViewPic extends BaseMaskView {
 
     private Paint mGridPaint;
 
-    public MaskViewPic(@NonNull Context context) {
+    public MaskPicView(@NonNull Context context) {
         super(context);
 
         init();

@@ -3,8 +3,10 @@ package com.ttsea.jcamera.core;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.os.Build;
 import android.util.AttributeSet;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
 
@@ -12,12 +14,17 @@ import com.ttsea.jcamera.R;
 import com.ttsea.jcamera.annotation.Flash;
 import com.ttsea.jcamera.callbacks.CameraCallback;
 
+import java.io.File;
 import java.util.List;
 
-public class CameraScanView extends FrameLayout {
+import androidx.annotation.Nullable;
+
+public class CameraScanView extends FrameLayout implements CameraCallback {
     private Context mContext;
     private ICamera iCamera;
+    private MaskScanView iMaskView;
     private OrientationDetector mOrientationDetector;
+    private CameraCallback mCallback;
 
     /**
      * 开启或者关闭log
@@ -25,7 +32,7 @@ public class CameraScanView extends FrameLayout {
      * @param enable true为开启log，false为关闭log
      */
     public static void enableLog(boolean enable) {
-        CameraxLog.enableLog(enable);
+        JCameraLog.enableLog(enable);
     }
 
     public CameraScanView(Context context) {
@@ -56,7 +63,7 @@ public class CameraScanView extends FrameLayout {
 //        }
         ISurface iSurface = new SurfaceViewPreview(mContext);
 
-        MaskViewScan iMaskView = new MaskViewScan(mContext);
+        iMaskView = new MaskScanView(mContext);
 
         if (Build.VERSION.SDK_INT < 21 || !Utils.cameraSupportHighLevel(mContext)) {
             iCamera = new Camera1(mContext, iSurface, iMaskView);
@@ -66,6 +73,7 @@ public class CameraScanView extends FrameLayout {
             iCamera = new Camera2Api23(mContext, iSurface, iMaskView);
         }
 
+        iCamera.setCameraCallback(this);
         iSurface.setICamera(iCamera);
         iMaskView.setICamera(iCamera);
 
@@ -80,8 +88,10 @@ public class CameraScanView extends FrameLayout {
             TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.CameraScanView);
 
             String ratio = a.getString(R.styleable.CameraScanView_jScanRectRatio);
+            int rectMarginLeftRight = a.getDimensionPixelOffset(R.styleable.CameraScanView_jRectMarginLeftRight, Utils.dip2px(mContext, 16));
+            int rectMarginTopBottom = a.getDimensionPixelOffset(R.styleable.CameraScanView_jRectMarginTopBottom, Utils.dip2px(mContext, 16));
             int borderColor = a.getColor(R.styleable.CameraScanView_jBorderColor, getDefaultColor());
-            int borderHeight = a.getDimensionPixelOffset(R.styleable.CameraScanView_jBorderHeight, Utils.dip2px(mContext, 2));
+            int borderHeight = a.getDimensionPixelOffset(R.styleable.CameraScanView_jBorderHeight, Utils.dip2px(mContext, 1));
             int borderLength = a.getDimensionPixelOffset(R.styleable.CameraScanView_jBorderLength, Utils.dip2px(mContext, 20));
 
             boolean showMask = a.getBoolean(R.styleable.CameraScanView_jShowMask, true);
@@ -103,6 +113,8 @@ public class CameraScanView extends FrameLayout {
             if (ratio != null) {
                 iMaskView.setScanRectRatio(AspectRatio.parse(ratio));
             }
+            iMaskView.setPadding(rectMarginLeftRight, rectMarginTopBottom, rectMarginLeftRight, rectMarginTopBottom);
+
             iMaskView.setBorderColor(borderColor);
             iMaskView.setBorderHeight(borderHeight);
             iMaskView.setBorderLength(borderLength);
@@ -113,13 +125,13 @@ public class CameraScanView extends FrameLayout {
             iMaskView.setMaskDuration(maskDuration);
             iMaskView.setMaskMarginLeftRight(maskMarginLeftRight);
             iMaskView.setMaskMarginTopBottom(maskMarginTopBottom);
-            iMaskView.setShowMask(showMask);
 
             iMaskView.setShadowColor(shadowColor);
         }
 
         LayoutParams params = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
         addView((View) iSurface, params);
+
         addView(iMaskView, params);
     }
 
@@ -139,6 +151,79 @@ public class CameraScanView extends FrameLayout {
         super.onDetachedFromWindow();
     }
 
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent ev) {
+
+        //在扫描区域外的操作一律拦截
+        if (!iMaskView.getScanRect().contains((int) ev.getX(), (int) ev.getY())) {
+            return true;
+        }
+
+        return super.onInterceptTouchEvent(ev);
+    }
+
+    @Override
+    public void onCameraOpened() {
+        if (mCallback != null) {
+            mCallback.onCameraOpened();
+        }
+    }
+
+    @Override
+    public void onCameraClosed() {
+        if (mCallback != null) {
+            mCallback.onCameraClosed();
+        }
+    }
+
+    @Override
+    public void onCameraError(int errorCode, String msg) {
+        if (mCallback != null) {
+            mCallback.onCameraError(errorCode, msg);
+        }
+    }
+
+    @Override
+    public void onStartPreview() {
+        iMaskView.startMaskAnimation();
+        if (mCallback != null) {
+            mCallback.onStartPreview();
+        }
+    }
+
+    @Override
+    public void onStopPreview() {
+        iMaskView.stopMaskAnimation();
+        if (mCallback != null) {
+            mCallback.onStopPreview();
+        }
+    }
+
+    @Override
+    public void onPictureTaken(@Nullable File picFile, String errorMsg) {
+        if (mCallback != null) {
+            mCallback.onPictureTaken(picFile, errorMsg);
+        }
+    }
+
+    @Override
+    public void oneShotFrameData(@Nullable byte[] data, int format, int width, int height) {
+        if (mCallback != null) {
+            mCallback.oneShotFrameData(data, format, width, height);
+        }
+    }
+
+    @Override
+    public void everyFrameData(@Nullable byte[] data, int format, int width, int height) {
+        if (mCallback != null) {
+            mCallback.everyFrameData(data, format, width, height);
+        }
+    }
+
+    public void setCameraCallback(CameraCallback callback) {
+        mCallback = callback;
+    }
+
     /**
      * 获取默认边框和扫描线的颜色
      *
@@ -148,19 +233,9 @@ public class CameraScanView extends FrameLayout {
         return Color.parseColor("#D81B60");
     }
 
-
     //////////////////////////////////////////////////////////////////////////////////////////////
     // ---------------------------- 以下代码是间接调用iCamera ----------------------------
     //////////////////////////////////////////////////////////////////////////////////////////////
-
-    /**
-     * see {@link ICamera#setCameraCallback(CameraCallback)}
-     *
-     * @param callback see {@link ICamera#setCameraCallback(CameraCallback)}
-     */
-    public void setCameraCallback(CameraCallback callback) {
-        iCamera.setCameraCallback(callback);
-    }
 
     /**
      * see {@link ICamera#openCamera(int)}
@@ -174,6 +249,20 @@ public class CameraScanView extends FrameLayout {
      */
     public void releaseCamera() {
         iCamera.releaseCamera();
+    }
+
+    /**
+     * see {@link ICamera#startPreview()}
+     */
+    public void startPreview() {
+        iCamera.startPreview();
+    }
+
+    /**
+     * see {@link ICamera#stopPreview()}
+     */
+    public void stopPreview() {
+        iCamera.stopPreview();
     }
 
     /**
@@ -211,5 +300,25 @@ public class CameraScanView extends FrameLayout {
      */
     public boolean setFlashMode(@Flash int flash) {
         return iCamera.setFlashMode(flash);
+    }
+
+    /**
+     * see {@link ICamera#setOneShotPreview()}
+     */
+    public void setOneShotPreview() {
+        iCamera.setOneShotPreview();
+    }
+
+    //////////////////////////////////////////////////////////////////////////////////////////////
+    // ---------------------------- 以下代码是间接调用iMaskView ----------------------------
+    //////////////////////////////////////////////////////////////////////////////////////////////
+
+    /**
+     * {@inheritDoc}
+     *
+     * @return see {@link MaskScanView#getScanRect()}
+     */
+    public Rect getScanRect() {
+        return iMaskView.getScanRect();
     }
 }

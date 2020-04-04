@@ -12,9 +12,9 @@ import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-class MaskViewScan extends BaseMaskView {
+class MaskScanView extends BaseMaskView {
     /** 扫描框长宽比，为null的时候表示全屏 */
-    private AspectRatio scanRectRatio = AspectRatio.of(1, 1);
+    private AspectRatio scanRectRatio = null;
     @ColorInt
     private int borderColor;//边框颜色
     private int borderHeight;//边框高度
@@ -44,7 +44,7 @@ class MaskViewScan extends BaseMaskView {
 
     private TranslateAnimation mMaskAnimator;
 
-    public MaskViewScan(@NonNull Context context) {
+    public MaskScanView(@NonNull Context context) {
         super(context);
 
         init();
@@ -72,7 +72,7 @@ class MaskViewScan extends BaseMaskView {
         paddingTop = getPaddingTop();
         paddingRight = getPaddingRight();
         paddingBottom = getPaddingBottom();
-        setPadding(0, 0, 0, 0);
+        super.setPadding(0, 0, 0, 0);
 
         setWillNotDraw(false);
         calcScanRect();
@@ -99,7 +99,6 @@ class MaskViewScan extends BaseMaskView {
 
         if (maskView == null) {
             maskView = new View(getContext());
-            maskView.setBackgroundColor(maskColor);
 
             LayoutParams params = new LayoutParams(right - left, maskHeight);
             addView(maskView, params);
@@ -113,6 +112,7 @@ class MaskViewScan extends BaseMaskView {
             maskView.layout(left, top, right, top + maskHeight);
         }
 
+        maskView.setBackgroundColor(maskColor);
         maskView.setVisibility(showMask ? VISIBLE : GONE);
 
         mMaskAnimator = new TranslateAnimation(0, 0, top - bottom, bottom - top);
@@ -143,7 +143,15 @@ class MaskViewScan extends BaseMaskView {
         int right = getRight() - paddingRight;
         int bottom = getBottom() - paddingBottom;
 
-        if (getScanRectRatioFloat() != 0) {
+        float ratio = getScanRectRatioFloat();
+//        if (ratio > 0 && Utils.getDisplay(this) != null) {
+//            int rotation = Utils.getDisplay(this).getRotation();
+//            if (rotation % Surface.ROTATION_180 != 0) {
+//                ratio = 1 / ratio;
+//            }
+//        }
+
+        if (ratio <= 0) {
             left = getLeft();
             top = getTop();
             right = getRight();
@@ -153,17 +161,17 @@ class MaskViewScan extends BaseMaskView {
         int width = right - left;
         int height = bottom - top;
 
-        if (0 < getScanRectRatioFloat() && getScanRectRatioFloat() <= 1) {
-            int newHeight = (int) (width * getScanRectRatioFloat());
-            int heightOffset = (height - newHeight) / 2;
-            top = top + heightOffset;
-            bottom = bottom - heightOffset;
-
-        } else if (getScanRectRatioFloat() > 1) {
-            int newWidth = (int) (height / getScanRectRatioFloat());
+        if (((float) width / height) > ratio) {
+            int newWidth = (int) (height * ratio);
             int widthOffset = width < newWidth ? 0 : ((width - newWidth) / 2);
             left = left + widthOffset;
             right = right - widthOffset;
+
+        } else {
+            int newHeight = (int) (width / ratio);
+            int heightOffset = (height - newHeight) / 2;
+            top = top + heightOffset;
+            bottom = bottom - heightOffset;
         }
 
         mScanRect.left = left;
@@ -171,7 +179,7 @@ class MaskViewScan extends BaseMaskView {
         mScanRect.right = right;
         mScanRect.bottom = bottom;
 
-        CameraxLog.d("mScanRect:" + mScanRect);
+        JCameraLog.d("mScanRect:" + mScanRect);
     }
 
     /**
@@ -221,7 +229,7 @@ class MaskViewScan extends BaseMaskView {
      * 启动扫描线动画，如果已经启动，则忽略
      */
     public void startMaskAnimation() {
-        if (isAnimatorRunning()) {
+        if (!showMask || isAnimatorRunning()) {
             return;
         }
         maskView.startAnimation(mMaskAnimator);
@@ -271,7 +279,7 @@ class MaskViewScan extends BaseMaskView {
      *
      * @return float比例值
      */
-    public float getScanRectRatioFloat() {
+    private float getScanRectRatioFloat() {
         if (scanRectRatio == null) {
             return 0;
         }
@@ -282,6 +290,15 @@ class MaskViewScan extends BaseMaskView {
     //////////////////////////////////////////////////////////////////////////////////////////////
     // ---------------------------- 以下是 setter 代码 ----------------------------
     //////////////////////////////////////////////////////////////////////////////////////////////
+
+    @Override
+    public void setPadding(int left, int top, int right, int bottom) {
+        paddingLeft = left;
+        paddingTop = top;
+        paddingRight = right;
+        paddingBottom = bottom;
+        super.setPadding(0, 0, 0, 0);
+    }
 
     /**
      * 设置扫描框的长宽比，null的时候表示全屏
@@ -349,16 +366,12 @@ class MaskViewScan extends BaseMaskView {
 
     public void setMaskColor(int maskColor) {
         this.maskColor = maskColor;
-        if (mMaskPaint != null) {
-            mMaskPaint.setColor(maskColor);
-        }
+        mMaskPaint.setColor(maskColor);
     }
 
     public void setMaskHeight(int maskHeight) {
         this.maskHeight = maskHeight;
-        if (mMaskPaint != null) {
-            mMaskPaint.setStrokeWidth(maskHeight);
-        }
+        mMaskPaint.setStrokeWidth(maskHeight);
     }
 
     public void setMaskMarginLeftRight(int maskMarginLeftRight) {
@@ -378,8 +391,6 @@ class MaskViewScan extends BaseMaskView {
 
     public void setShadowColor(int shadowColor) {
         this.shadowColor = shadowColor;
-        if (mShadowPaint != null) {
-            mShadowPaint.setColor(shadowColor);
-        }
+        mShadowPaint.setColor(shadowColor);
     }
 }

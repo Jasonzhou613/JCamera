@@ -7,6 +7,7 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Surface;
 
 import com.ttsea.jcamera.annotation.Flash;
 
@@ -61,7 +62,7 @@ abstract class BaseCamera implements ICamera, SensorEventListener {
 //                mSensorManager.unregisterListener(this, mAccelerometer);
 //                result = mSensorManager.registerListener(this, mAccelerometer, SensorManager.SENSOR_DELAY_NORMAL);
 //            }
-            CameraxLog.d("register Accelerometer sensor, success:" + result);
+            JCameraLog.d("register Accelerometer sensor, success:" + result);
 
 
             result = mSensorManager.registerListener(this, mGravitySensor, SensorManager.SENSOR_DELAY_NORMAL);
@@ -70,7 +71,7 @@ abstract class BaseCamera implements ICamera, SensorEventListener {
 //                mSensorManager.unregisterListener(this, mGravitySensor);
 //                result = mSensorManager.registerListener(this, mGravitySensor, SensorManager.SENSOR_DELAY_NORMAL);
 //            }
-            CameraxLog.d("register GravitySensor sensor, success:" + result);
+            JCameraLog.d("register GravitySensor sensor, success:" + result);
         }
     }
 
@@ -81,7 +82,7 @@ abstract class BaseCamera implements ICamera, SensorEventListener {
      */
     protected void unregisterSensor() {
         if (mSensorManager != null) {
-            CameraxLog.d("unregister sensors");
+            JCameraLog.d("unregister sensors");
             try {
                 mSensorManager.unregisterListener(this);
             } catch (Exception e) {
@@ -167,6 +168,36 @@ abstract class BaseCamera implements ICamera, SensorEventListener {
     }
 
     /**
+     * 将YUV数据顺时针旋转90度
+     *
+     * @param data        待旋转的数据
+     * @param imageWidth  data宽度
+     * @param imageHeight data高度
+     * @return 旋转后的数据
+     */
+    protected byte[] rotateYUV420Degree90(byte[] data, int imageWidth, int imageHeight) {
+        byte[] yuv = new byte[imageWidth * imageHeight * 3 / 2];
+        int i = 0;
+        for (int x = 0; x < imageWidth; x++) {
+            for (int y = imageHeight - 1; y >= 0; y--) {
+                yuv[i] = data[y * imageWidth + x];
+                i++;
+            }
+        }
+        i = imageWidth * imageHeight * 3 / 2 - 1;
+        for (int x = imageWidth - 1; x > 0; x = x - 2) {
+            for (int y = 0; y < imageHeight / 2; y++) {
+                yuv[i] = data[(imageWidth * imageHeight) + (y * imageWidth) + x];
+                i--;
+                yuv[i] = data[(imageWidth * imageHeight) + (y * imageWidth)
+                        + (x - 1)];
+                i--;
+            }
+        }
+        return yuv;
+    }
+
+    /**
      * 获取闪关灯 String描述
      *
      * @param flash see{@link Constants}
@@ -199,5 +230,34 @@ abstract class BaseCamera implements ICamera, SensorEventListener {
         }
 
         return des;
+    }
+
+    /**
+     * 通过Activity的选择角度得到Camera preview需要选中的角度
+     *
+     * @param activityRotation Activity的选择角度得到
+     * @return 0/90/180/270
+     */
+    protected int getCameraRotationDegrees(int activityRotation) {
+        int degrees = 0;
+        switch (activityRotation) {
+            case Surface.ROTATION_0:
+                degrees = 90;
+                break;
+
+            case Surface.ROTATION_90:
+                degrees = 0;
+                break;
+
+            case Surface.ROTATION_180:
+                degrees = 270;
+                break;
+
+            case Surface.ROTATION_270:
+                degrees = 180;
+                break;
+        }
+
+        return degrees;
     }
 }

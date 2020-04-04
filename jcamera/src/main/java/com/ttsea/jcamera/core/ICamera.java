@@ -6,8 +6,12 @@ import com.ttsea.jcamera.annotation.Facing;
 import com.ttsea.jcamera.annotation.Flash;
 import com.ttsea.jcamera.callbacks.CameraCallback;
 
+import java.io.File;
 import java.util.List;
 import java.util.Set;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 interface ICamera {
 
@@ -42,6 +46,16 @@ interface ICamera {
      * 建议在 Activity.onResume() 中开启摄像头，在 Activity.onPause() 中释放摄像头
      */
     void releaseCamera();
+
+    /**
+     * 开启预览
+     */
+    void startPreview();
+
+    /**
+     * 停止预览
+     */
+    void stopPreview();
 
     /**
      * 获取当前开的摄像头
@@ -126,13 +140,18 @@ interface ICamera {
 
     /**
      * 拍张照
+     *
+     * @param outputFile 录像输出文件，可以为空<br>
+     *                   为空的时候，系统会自动以当前手机时间作为文件名
      */
-    void takePhoto();
+    void takePhoto(@Nullable File outputFile);
 
     /**
      * 开始录像
+     *
+     * @param outputFile 录像输出文件，不可为空
      */
-    void startRecord();
+    void startRecord(@NonNull File outputFile);
 
     /**
      * 停止录像
@@ -167,4 +186,6 @@ interface ICamera {
      * @return true:执行了缩小动作，false:未执行缩小动作
      */
     boolean zoomOut(float value);
+
+    void setOneShotPreview();
 }

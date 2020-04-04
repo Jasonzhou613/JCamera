@@ -12,7 +12,7 @@ import android.util.Log;
  * <b>author:</b> Jason <br>
  * <b>version:</b> 1.0.0 <br>
  */
-final class CameraxLog {
+final class JCameraLog {
     private static boolean DEBUG = false;
     /**
      * 输出日志等级，当DEBUG为false的时候会根据设置的等级来输出日志<br>
@@ -102,7 +102,7 @@ final class CameraxLog {
 
         for (StackTraceElement trace : traces) {
             callingClass = trace.getClassName();
-            if (!callingClass.equals(CameraxLog.class.getName())) {
+            if (!callingClass.equals(JCameraLog.class.getName())) {
                 if (callingClass.lastIndexOf('.') != -1) {
                     callingClass = callingClass.substring(callingClass
                             .lastIndexOf('.') + 1);
@@ -131,7 +131,7 @@ final class CameraxLog {
         String caller = "<unknown>";
         for (StackTraceElement trace : traces) {
             String callingClass = trace.getClassName();
-            if (!callingClass.equals(CameraxLog.class.getName())) {
+            if (!callingClass.equals(JCameraLog.class.getName())) {
                 if (callingClass.lastIndexOf('.') != -1) {
                     callingClass = callingClass.substring(callingClass
                             .lastIndexOf('.') + 1);

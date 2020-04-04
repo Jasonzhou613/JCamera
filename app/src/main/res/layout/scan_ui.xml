@@ -5,12 +5,24 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <com.ttsea.jcamera.core.CameraScanView
-        android:id="@+id/cameraView"
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        app:jScanRectRatio="3:4" />
+        android:layout_height="match_parent">
 
-    <include layout="@layout/toolbar_view" />
+        <com.ttsea.jcamera.core.CameraScanView
+            android:id="@+id/cameraView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            app:jScanRectRatio="4:3" />
+
+        <ImageView
+            android:id="@+id/ivPause"
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:layout_gravity="center"
+            android:background="@mipmap/ic_pause"
+            android:visibility="gone" />
+
+    </FrameLayout>
 
 </FrameLayout>

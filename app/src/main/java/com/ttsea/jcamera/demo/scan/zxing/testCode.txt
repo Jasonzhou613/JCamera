@@ -1,0 +1,66 @@
+    //for test, just save data as image
+    private void decodeData2(@Nullable byte[] data, int format, int width, int height) {
+        saveData(data, width, height);
+    }
+
+    //for test
+    private String saveData(byte[] data, int width, int height) {
+        File file = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES),
+                System.currentTimeMillis() + ".jpg");
+
+        if (file.exists()) {
+            file.delete();
+        }
+
+        if (!file.getParentFile().exists()) {
+            file.getParentFile().mkdirs();
+        }
+
+        ByteArrayOutputStream byos = null;
+        FileOutputStream os = null;
+        try {
+
+            Rect rect = scanView.getScanRect();
+
+            String msg = "size:" + width + "x" + height + ", rect:" + rect;
+            JLog.m(msg);
+
+            final YuvImage image = new YuvImage(data, ImageFormat.NV21, width, height, null);
+            byos = new ByteArrayOutputStream();
+
+            if (!image.compressToJpeg(rect, 100, byos)) {
+            }
+            byte[] tmp = byos.toByteArray();
+
+            os = new FileOutputStream(file);
+            os.write(tmp);
+            os.close();
+
+            return file.getAbsolutePath();
+
+        } catch (Exception e) {
+            JLog.e("Cannot write to " + file + ", " + e.getMessage());
+            e.printStackTrace();
+
+        } finally {
+            if (byos != null) {
+                try {
+                    byos.flush();
+                    byos.close();
+                } catch (Exception e) {
+                    // Ignore
+                }
+            }
+
+            if (os != null) {
+                try {
+                    os.flush();
+                    os.close();
+                } catch (Exception e) {
+                    // Ignore
+                }
+            }
+        }
+
+        return null;
+    }

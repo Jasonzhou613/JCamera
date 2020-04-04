@@ -48,6 +48,10 @@
     <declare-styleable name="CameraScanView">
         <!-- 扫描框比例，如 16:9，不设置的时候表示全屏 -->
         <attr name="jScanRectRatio" format="string" />
+        <!-- 扫描框距离左右两边的距离 -->
+        <attr name="jRectMarginLeftRight" format="dimension" />
+        <!-- 扫描框距离上下两边的距离 -->
+        <attr name="jRectMarginTopBottom" format="dimension" />
         <!-- 扫描边框颜色 -->
         <attr name="jBorderColor" format="color" />
         <!-- 扫描边框高度 -->

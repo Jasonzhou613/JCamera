@@ -2,8 +2,15 @@
 
 buildscript {
     repositories {
-        google()
-        jcenter()
+        // google()
+        // jcenter()
+
+        maven {
+            url 'file://D:/Android/extras/m2repository'
+        }
+        maven {
+            url 'file://D:/Android/offline/m2repository'
+        }
     }
 
     dependencies {
@@ -16,8 +23,15 @@ buildscript {
 
 allprojects {
     repositories {
-        google()
-        jcenter()
+        // google()
+        // jcenter()
+
+        maven {
+            url 'file://D:/Android/extras/m2repository'
+        }
+        maven {
+            url 'file://D:/Android/offline/m2repository'
+        }
     }
 }
 

@@ -3,12 +3,9 @@ package com.ttsea.jcamera.demo.camera;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.content.Context;
 import android.content.pm.PackageManager;
-import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
-import android.util.Log;
 import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -30,17 +27,16 @@ import com.ttsea.jcamera.demo.camera.adapter.MyAdapter;
 import com.ttsea.jcamera.demo.camera.model.ItemEntity;
 import com.ttsea.jcamera.demo.camera.model.SaveStatus;
 import com.ttsea.jcamera.demo.camera.views.RecordButton;
+import com.ttsea.jcamera.demo.debug.JLog;
 import com.ttsea.jcamera.demo.utils.Utils;
 
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.OutputStream;
-import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
@@ -60,8 +56,6 @@ public class CameraUI extends AppCompatActivity implements RecordButton.GestureC
 
     private boolean cameraOpened;
     private SaveStatus saveStatus;
-
-    private boolean isRecording = false;
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
@@ -96,7 +90,7 @@ public class CameraUI extends AppCompatActivity implements RecordButton.GestureC
         cameraView.setCameraCallback(new SimpleCameraCallback() {
             @Override
             public void onCameraOpened() {
-                Log.d(TAG, "onCameraOpened...");
+                JLog.d(TAG, "onCameraOpened...");
                 cameraOpened = true;
                 saveStatus.facing = cameraView.getFacing();
 
@@ -108,7 +102,7 @@ public class CameraUI extends AppCompatActivity implements RecordButton.GestureC
 
             @Override
             public void onCameraClosed() {
-                Log.d(TAG, "onCameraClosed...");
+                JLog.d(TAG, "onCameraClosed...");
                 cameraOpened = false;
                 invalidateOptionsMenu();
             }
@@ -116,22 +110,23 @@ public class CameraUI extends AppCompatActivity implements RecordButton.GestureC
             @Override
             public void onCameraError(int errorCode, String msg) {
                 String errorMsg = "errorCode:" + errorCode + ", msg:" + msg;
-                Log.e(TAG, "onCameraError, " + errorMsg);
+                JLog.e(TAG, "onCameraError, " + errorMsg);
                 Toast.makeText(mActivity, errorMsg, Toast.LENGTH_SHORT).show();
 
                 finish();
             }
 
             @Override
-            public void onPictureTaken(byte[] data) {
-                Log.d(TAG, "onPictureTaken...");
+            public void onPictureTaken(@Nullable File file, String errorMsg) {
+                JLog.d(TAG, "onPictureTaken...");
 
-                if (data == null) {
+                if (file == null) {
+                    Toast.makeText(mActivity, errorMsg, Toast.LENGTH_SHORT).show();
                     return;
                 }
 
-                SavePicTask task = new SavePicTask(mActivity);
-                task.execute(data);
+                String msg = "图片已保存至:" + file.getAbsolutePath();
+                Toast.makeText(mActivity, msg, Toast.LENGTH_SHORT).show();
             }
         });
 
@@ -415,73 +410,18 @@ public class CameraUI extends AppCompatActivity implements RecordButton.GestureC
 
     @Override
     public void takePhoto() {
-        cameraView.takePhoto();
+        File file = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "picture.jpg");
+        cameraView.takePhoto(file);
     }
 
     @Override
     public void startRecord() {
-        cameraView.startRecord();
+        File file = new File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), "video.mp4");
+        cameraView.startRecord(file);
     }
 
     @Override
     public void stopRecord() {
         cameraView.stopRecord();
-    }
-
-    private static class SavePicTask extends AsyncTask<byte[], Integer, String> {
-        private final String TAG = "SavePicTask";
-        private WeakReference<Context> wf;
-
-        SavePicTask(Context context) {
-            wf = new WeakReference<>(context);
-        }
-
-        @Override
-        protected String doInBackground(byte[]... bytes) {
-            if (wf.get() == null) {
-                return "";
-            }
-            File file = new File(wf.get().getExternalFilesDir(Environment.DIRECTORY_PICTURES),
-                    "picture.jpg");
-
-            if (file.exists()) {
-                file.delete();
-            }
-
-            if (!file.getParentFile().exists()) {
-                file.getParentFile().mkdirs();
-            }
-
-            OutputStream os = null;
-            try {
-                os = new FileOutputStream(file);
-                os.write(bytes[0]);
-                os.close();
-
-            } catch (Exception e) {
-                Log.e(TAG, "Cannot write to " + file, e);
-                e.printStackTrace();
-
-            } finally {
-                if (os != null) {
-                    try {
-                        os.close();
-                    } catch (Exception e) {
-                        // Ignore
-                    }
-                }
-            }
-
-            return file.getAbsolutePath();
-        }
-
-        @Override
-        protected void onPostExecute(String path) {
-            if (wf.get() == null) {
-                return;
-            }
-            String msg = "图片已保存至:" + path;
-            Toast.makeText(wf.get(), msg, Toast.LENGTH_SHORT).show();
-        }
     }
 }

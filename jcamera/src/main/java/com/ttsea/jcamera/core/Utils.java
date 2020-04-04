@@ -8,8 +8,13 @@ import android.hardware.camera2.CameraManager;
 import android.os.Build;
 import android.util.DisplayMetrics;
 import android.view.Display;
+import android.view.Surface;
 import android.view.View;
 import android.view.WindowManager;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 import androidx.annotation.NonNull;
 
@@ -98,7 +103,24 @@ final class Utils {
 
         final WindowManager wm = (WindowManager) view.getContext().getSystemService(
                 Context.WINDOW_SERVICE);
+
         return wm.getDefaultDisplay();
+    }
+
+    /**
+     * 获取选中角度
+     *
+     * @param view 当前的view
+     * @return see {@link Surface#ROTATION_0} {@link Surface#ROTATION_90}
+     * {@link Surface#ROTATION_180} {@link Surface#ROTATION_270}
+     */
+    public static int getRotation(@NonNull View view) {
+        Display display = getDisplay(view);
+        if (display != null) {
+            return display.getRotation();
+        }
+
+        return Surface.ROTATION_0;
     }
 
     /**
@@ -136,9 +158,24 @@ final class Utils {
 
         } catch (Exception e) {
             String errorMsg = "Exception e:" + e.getMessage();
-            CameraxLog.w(errorMsg);
+            JCameraLog.w(errorMsg);
         }
 
         return false;
+    }
+
+    /**
+     * 得到当前时间
+     *
+     * @param pattern 时间格式，形如：yyyy-MM-dd 或者yyyy-MM-dd HH:mm:ss
+     * @return String
+     */
+    public static String getCurrentTime(String pattern) {
+        String date = null;
+        SimpleDateFormat formatter = new SimpleDateFormat(pattern, Locale.getDefault());
+        Date curDate = new Date(System.currentTimeMillis());// 获取当前时间
+        date = formatter.format(curDate);
+
+        return date;
     }
 }
