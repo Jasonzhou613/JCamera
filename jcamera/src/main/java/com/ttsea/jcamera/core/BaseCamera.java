@@ -22,7 +22,7 @@ abstract class BaseCamera implements ICamera, SensorEventListener {
 
     private final int SENSOR_PERIOD = 1000;//定义传感器多久响应一次(单位毫秒)
     //当xyz轴的任意一个方向的加速度大于这个值的时候，则触发自动聚焦(单位 m/s^2)
-    private final float MAX_ACCELEROMETER = 0.35f;
+    private final float MAX_ACCELEROMETER = 0.45f;
 
     private Context mContext;
     private final SensorManager mSensorManager;

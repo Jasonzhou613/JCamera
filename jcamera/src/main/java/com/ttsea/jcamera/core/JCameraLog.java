@@ -123,7 +123,10 @@ final class JCameraLog {
      */
     private static String combineLogMsg(String... msg) {
         StringBuilder sb = new StringBuilder();
-        sb.append("[Thread:").append(Thread.currentThread().getId())
+        sb.append("[")
+                .append(Thread.currentThread().getName())
+                .append(":")
+                .append(Thread.currentThread().getId())
                 .append("]");
 
         StackTraceElement[] traces = new Throwable().fillInStackTrace()
@@ -133,8 +136,7 @@ final class JCameraLog {
             String callingClass = trace.getClassName();
             if (!callingClass.equals(JCameraLog.class.getName())) {
                 if (callingClass.lastIndexOf('.') != -1) {
-                    callingClass = callingClass.substring(callingClass
-                            .lastIndexOf('.') + 1);
+                    callingClass = callingClass.substring(callingClass.lastIndexOf('.') + 1);
                 }
                 caller = callingClass + "." + trace.getMethodName() + "(rows:"
                         + trace.getLineNumber() + ")";

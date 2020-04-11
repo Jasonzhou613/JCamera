@@ -4,7 +4,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 
-public class ByteUtils {
+final class ByteUtils {
 
     public static void saveData(byte[] data, File file) throws Exception {
         if (file.exists()) {

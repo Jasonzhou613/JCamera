@@ -37,6 +37,11 @@ public class SimpleCameraCallback implements CameraCallback {
     }
 
     @Override
+    public void onRecordError(String errorMsg) {
+
+    }
+
+    @Override
     public void oneShotFrameData(@Nullable byte[] data, int format, int width, int height) {
 
     }

@@ -4,7 +4,6 @@ import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Color;
 import android.graphics.Rect;
-import android.os.Build;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
@@ -65,13 +64,15 @@ public class CameraScanView extends FrameLayout implements CameraCallback {
 
         iMaskView = new MaskScanView(mContext);
 
-        if (Build.VERSION.SDK_INT < 21 || !Utils.cameraSupportHighLevel(mContext)) {
-            iCamera = new Camera1(mContext, iSurface, iMaskView);
-        } else if (Build.VERSION.SDK_INT < 23) {
-            iCamera = new Camera2(mContext, iSurface, iMaskView);
-        } else {
-            iCamera = new Camera2Api23(mContext, iSurface, iMaskView);
-        }
+//        if (Build.VERSION.SDK_INT < 21 || !Utils.cameraSupportHighLevel(mContext)) {
+//            iCamera = new Camera1(mContext, iSurface, iMaskView);
+//        } else if (Build.VERSION.SDK_INT < 23) {
+//            iCamera = new Camera2(mContext, iSurface, iMaskView);
+//        } else {
+//            iCamera = new Camera2Api23(mContext, iSurface, iMaskView);
+//        }
+
+        iCamera = new Camera1(mContext, iSurface, iMaskView);
 
         iCamera.setCameraCallback(this);
         iSurface.setICamera(iCamera);
@@ -88,18 +89,18 @@ public class CameraScanView extends FrameLayout implements CameraCallback {
             TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.CameraScanView);
 
             String ratio = a.getString(R.styleable.CameraScanView_jScanRectRatio);
-            int rectMarginLeftRight = a.getDimensionPixelOffset(R.styleable.CameraScanView_jRectMarginLeftRight, Utils.dip2px(mContext, 16));
-            int rectMarginTopBottom = a.getDimensionPixelOffset(R.styleable.CameraScanView_jRectMarginTopBottom, Utils.dip2px(mContext, 16));
+            int rectMarginLeftRight = a.getDimensionPixelOffset(R.styleable.CameraScanView_jRectMarginLeftRight, DisplayUtils.dip2px(mContext, 16));
+            int rectMarginTopBottom = a.getDimensionPixelOffset(R.styleable.CameraScanView_jRectMarginTopBottom, DisplayUtils.dip2px(mContext, 16));
             int borderColor = a.getColor(R.styleable.CameraScanView_jBorderColor, getDefaultColor());
-            int borderHeight = a.getDimensionPixelOffset(R.styleable.CameraScanView_jBorderHeight, Utils.dip2px(mContext, 1));
-            int borderLength = a.getDimensionPixelOffset(R.styleable.CameraScanView_jBorderLength, Utils.dip2px(mContext, 20));
+            int borderHeight = a.getDimensionPixelOffset(R.styleable.CameraScanView_jBorderHeight, DisplayUtils.dip2px(mContext, 1));
+            int borderLength = a.getDimensionPixelOffset(R.styleable.CameraScanView_jBorderLength, DisplayUtils.dip2px(mContext, 20));
 
             boolean showMask = a.getBoolean(R.styleable.CameraScanView_jShowMask, true);
             int maskColor = a.getColor(R.styleable.CameraScanView_jMaskColor, getDefaultColor());
-            int maskHeight = a.getDimensionPixelOffset(R.styleable.CameraScanView_jMaskHeight, Utils.dip2px(mContext, 1));
-            int maskDuration = a.getInteger(R.styleable.CameraScanView_jMaskDuration, 3000);
-            int maskMarginLeftRight = a.getDimensionPixelOffset(R.styleable.CameraScanView_jMaskMarginLeftRight, Utils.dip2px(mContext, 6));
-            int maskMarginTopBottom = a.getDimensionPixelOffset(R.styleable.CameraScanView_jMaskMarginTopBottom, Utils.dip2px(mContext, 6));
+            int maskHeight = a.getDimensionPixelOffset(R.styleable.CameraScanView_jMaskHeight, DisplayUtils.dip2px(mContext, 1));
+            int maskDuration = a.getInteger(R.styleable.CameraScanView_jMaskDuration, 1000);
+            int maskMarginLeftRight = a.getDimensionPixelOffset(R.styleable.CameraScanView_jMaskMarginLeftRight, DisplayUtils.dip2px(mContext, 6));
+            int maskMarginTopBottom = a.getDimensionPixelOffset(R.styleable.CameraScanView_jMaskMarginTopBottom, DisplayUtils.dip2px(mContext, 6));
 
             int shadowColor = a.getColor(R.styleable.CameraScanView_jShadowColor, Color.parseColor("#66000000"));
 
@@ -139,7 +140,7 @@ public class CameraScanView extends FrameLayout implements CameraCallback {
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         if (!isInEditMode()) {
-            mOrientationDetector.enable(Utils.getDisplay(this));
+            mOrientationDetector.enable(DisplayUtils.getDisplay(this));
         }
     }
 
@@ -203,6 +204,13 @@ public class CameraScanView extends FrameLayout implements CameraCallback {
     public void onPictureTaken(@Nullable File picFile, String errorMsg) {
         if (mCallback != null) {
             mCallback.onPictureTaken(picFile, errorMsg);
+        }
+    }
+
+    @Override
+    public void onRecordError(String errorMsg) {
+        if (mCallback != null) {
+            mCallback.onRecordError(errorMsg);
         }
     }
 

@@ -21,12 +21,14 @@ import com.ttsea.jcamera.demo.utils.Utils;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 public class ScanUI extends AppCompatActivity {
     private Activity mActivity;
 
+    private Toolbar toolBar;
     private CameraScanView scanView;
     private ImageView ivPause;
 
@@ -36,6 +38,9 @@ public class ScanUI extends AppCompatActivity {
         setContentView(R.layout.scan_ui);
 
         mActivity = this;
+
+        toolBar = findViewById(R.id.toolBar);
+        setSupportActionBar(toolBar);
 
         scanView = findViewById(R.id.cameraView);
         ivPause = findViewById(R.id.ivPause);

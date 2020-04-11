@@ -5,7 +5,6 @@ import android.content.res.TypedArray;
 import android.graphics.Color;
 import android.os.Build;
 import android.util.AttributeSet;
-import android.view.Surface;
 import android.view.View;
 import android.widget.FrameLayout;
 
@@ -151,7 +150,7 @@ public class CameraPreview extends FrameLayout implements CameraCallback {
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         if (!isInEditMode()) {
-            mOrientationDetector.enable(Utils.getDisplay(this));
+            mOrientationDetector.enable(DisplayUtils.getDisplay(mContext));
         }
     }
 
@@ -184,8 +183,7 @@ public class CameraPreview extends FrameLayout implements CameraCallback {
         }
 
         AspectRatio ratio = getAspectRatio();
-        int rotation = Utils.getRotation(this);
-        if (rotation % Surface.ROTATION_180 == 0) {
+        if (!DisplayUtils.isLandscape(mContext)) {
             ratio = ratio.inverse();
         }
 
@@ -254,6 +252,13 @@ public class CameraPreview extends FrameLayout implements CameraCallback {
     public void onPictureTaken(@Nullable File picFile, String errorMsg) {
         if (mCallback != null) {
             mCallback.onPictureTaken(picFile, errorMsg);
+        }
+    }
+
+    @Override
+    public void onRecordError(String errorMsg) {
+        if (mCallback != null) {
+            mCallback.onRecordError(errorMsg);
         }
     }
 

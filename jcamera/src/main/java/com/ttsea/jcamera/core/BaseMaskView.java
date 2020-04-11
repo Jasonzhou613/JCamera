@@ -136,16 +136,16 @@ abstract class BaseMaskView extends FrameLayout implements IMaskView {
         mAreaPaint = new Paint();
         mAreaPaint.setColor(Color.parseColor("#FFFFFF"));
         mAreaPaint.setStyle(Paint.Style.STROKE);
-        mAreaPaint.setStrokeWidth(Utils.dip2px(mContext, 1));
+        mAreaPaint.setStrokeWidth(DisplayUtils.dip2px(mContext, 1));
         mAreaPaint.setAntiAlias(true);
 
         mCenterPaint = new Paint();
         mCenterPaint.setColor(Color.parseColor("#A0FFFFFF"));
         mCenterPaint.setStyle(Paint.Style.STROKE);
-        mCenterPaint.setStrokeWidth(Utils.dip2px(mContext, 2.0f));
+        mCenterPaint.setStrokeWidth(DisplayUtils.dip2px(mContext, 2.0f));
         mCenterPaint.setAntiAlias(true);
 
-        amplitude = Utils.dip2px(mContext, 5);
+        amplitude = DisplayUtils.dip2px(mContext, 5);
         //动画
         mAnimator = ValueAnimator.ofFloat(1f, 0f, 1f);
         mAnimator.setInterpolator(new LinearInterpolator());
@@ -250,7 +250,7 @@ abstract class BaseMaskView extends FrameLayout implements IMaskView {
     @Override
     public float getFocusAreaRadius() {
         if (focusAreaRadius <= 0) {
-            focusAreaRadius = Utils.dip2px(mContext, 68);
+            focusAreaRadius = DisplayUtils.dip2px(mContext, 68);
         }
         return focusAreaRadius;
     }
@@ -272,7 +272,7 @@ abstract class BaseMaskView extends FrameLayout implements IMaskView {
      */
     private float getFocusCenterRadius() {
         if (focusCenterRadius <= 0) {
-            focusCenterRadius = Utils.dip2px(mContext, 4);
+            focusCenterRadius = DisplayUtils.dip2px(mContext, 4);
         }
         return focusCenterRadius;
     }

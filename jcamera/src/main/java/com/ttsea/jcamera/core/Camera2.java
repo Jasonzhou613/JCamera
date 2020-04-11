@@ -23,6 +23,8 @@ import android.util.SparseIntArray;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 
+import com.ttsea.jcamera.annotation.Facing;
+import com.ttsea.jcamera.annotation.Flash;
 import com.ttsea.jcamera.callbacks.CameraCallback;
 
 import java.io.File;
@@ -31,39 +33,45 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.SortedSet;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 @TargetApi(21)
 class Camera2 extends BaseCamera {
+    private final int DEFAULT_FACING = -1;
     private final AspectRatio DEFAULT_RATIO = AspectRatio.parse("16:9");
 
     private Context mContext;
-    private CameraManager mManager;
+    private final CameraManager mManager;
     private CameraCharacteristics mCharacter;
     private CameraDevice mCamera;
+    private CameraCaptureSession mSession;
+    private CaptureRequest.Builder mPreviewRequest;
+    private ImageReader mImageReader;
+
     private ISurface iSurface;//对应的SurfaceView
     private IMaskView iMaskView;//SurfaceViews上面的view
     private CameraCallback mCallback;//相机回调
+
+    private Handler mChildHandler;
+    private HandlerThread mHandlerThread;
 
     //记录摄像头所支持的预览size
     private final SizeMap mPicSizeMap = new SizeMap();
     //记录摄像头所支持的图片size
     private final SizeMap mPreSizeMap = new SizeMap();
+    //记录摄像头是否正在使用，正在拍照或者录像都代表真正使用
+    private final AtomicBoolean isCameraInUsing = new AtomicBoolean(false);
+    //记录是否正在预览，默认:false
+    private final AtomicBoolean isShowingPreview = new AtomicBoolean(false);
 
-    private Handler mChildHandler;
-    private HandlerThread mHandlerThread;
-
-    private CameraCaptureSession mSession;
-    private CaptureRequest.Builder mPreviewRequest;
-    private ImageReader mImageReader;
-
-    private static final SparseIntArray INTERNAL_FACINGS = new SparseIntArray();
+    private static final SparseIntArray FACING_MAP = new SparseIntArray();
 
     static {
-        INTERNAL_FACINGS.put(Constants.FACING_BACK, CameraCharacteristics.LENS_FACING_BACK);
-        INTERNAL_FACINGS.put(Constants.FACING_FRONT, CameraCharacteristics.LENS_FACING_FRONT);
+        FACING_MAP.put(Constants.FACING_BACK, CameraCharacteristics.LENS_FACING_BACK);
+        FACING_MAP.put(Constants.FACING_FRONT, CameraCharacteristics.LENS_FACING_FRONT);
     }
 
     private static final SparseIntArray FLASH_MODES = new SparseIntArray();
@@ -83,10 +91,7 @@ class Camera2 extends BaseCamera {
         this.mContext = context;
         this.iSurface = iSurface;
         this.iMaskView = iMaskView;
-        init();
-    }
 
-    private void init() {
         mManager = (CameraManager) mContext.getSystemService(Context.CAMERA_SERVICE);
     }
 
@@ -109,52 +114,85 @@ class Camera2 extends BaseCamera {
         openCamera(Constants.FACING_BACK);
     }
 
-    @SuppressWarnings("all")
     @Override
-    public void openCamera(int facing) {
-        if (!Utils.checkCameraHardware(mContext) || getNumberOfCameras() <= 0) {
-            //设备不支持摄像头（或者没有摄像头）
-            String errorMsg = "Device has no camera.";
-            if (mCallback != null) {
-                mCallback.onCameraError(CameraCallback.CODE_NO_CAMERA, errorMsg);
+    public void openCamera(@Facing final int facing) {
+        if (mHandlerThread == null) {
+            mHandlerThread = new HandlerThread("Camera2");
+            mHandlerThread.start();
+            mChildHandler = new Handler(mHandlerThread.getLooper());
+            JCameraLog.d("Start a new handler thread:(" + mHandlerThread.getName()
+                    + ":" + mHandlerThread.getId() + ")");
+        }
+
+        mChildHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                openCameraInThread(facing);
             }
-            JCameraLog.w(errorMsg);
+        });
+    }
+
+    /**
+     * 在子线程中开启摄像头<br>
+     */
+    @SuppressWarnings("all")
+    private void openCameraInThread(@Facing int facing) {
+        if (!Utils.checkCameraHardware(mContext)) {
+            //设备不支持摄像头（或者没有摄像头）
+            final String errorMsg = "Device has no camera.";
+            if (mCallback != null) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mCallback.onCameraError(CameraCallback.CODE_NO_CAMERA, errorMsg);
+                    }
+                });
+            }
+            JCameraLog.e(errorMsg);
+            resetStatus();
+            quitHandlerThread();
             return;
         }
 
+        if (isCameraInUsing.get()) {
+            JCameraLog.d(getCameraStr(mCamera) + " is in using, can not open another camera.");
+            return;
+        }
+
+        //通过facing找到对应的cameraId
         String cameraId = null;
         try {
             String[] ids = mManager.getCameraIdList();
             for (String id : ids) {
                 CameraCharacteristics characteristics = mManager.getCameraCharacteristics(id);
-
                 Integer internalFacing = characteristics.get(CameraCharacteristics.LENS_FACING);
                 //找到朝向与想要打开的Camera朝向一样的摄像头
-                if (internalFacing != null && INTERNAL_FACINGS.get(facing) == internalFacing) {
+                if (internalFacing != null && FACING_MAP.get(facing, DEFAULT_FACING) == internalFacing) {
                     cameraId = id;
-                    mCharacter = characteristics;
                     break;
                 }
             }
 
             //遍历完后还是没有找到对应的camera，则尝试取第一个（且忽略facing）
-            if (Utils.isEmpty(cameraId)) {
+            if (Utils.isEmpty(cameraId) && ids.length > 0) {
                 cameraId = ids[0];
-                CameraCharacteristics characteristics = mManager.getCameraCharacteristics(cameraId);
-                mCharacter = characteristics;
-            }
-
-            //如果到这里还是没有找到对应的camera，则表示打开失败
-            if (Utils.isEmpty(cameraId)) {
-                throw new CameraAccessException(CameraAccessException.CAMERA_ERROR, "No camera support camera2 api.");
             }
 
         } catch (Exception e) {
-            String errorMsg = "Exception e:" + e.getMessage();
+            final String errorMsg = "Exception e:" + e.getMessage();
             JCameraLog.e(errorMsg);
             e.printStackTrace();
+
+            resetStatus();
+            quitHandlerThread();
+
             if (mCallback != null) {
-                mCallback.onCameraError(CameraCallback.CODE_OPEN_FAILED, errorMsg);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mCallback.onCameraError(CameraCallback.CODE_OPEN_FAILED, errorMsg);
+                    }
+                });
             }
 
             return;
@@ -166,98 +204,126 @@ class Camera2 extends BaseCamera {
             return;
         }
 
-        StreamConfigurationMap map = mCharacter.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
-        if (map != null) {
-            //记录该摄像头所支持的预览尺寸
-            mPreSizeMap.clear();
+        //如果到这里还是没有找到对应的camera，则表示打开失败
+        if (Utils.isEmpty(cameraId)) {
+            final String errorMsg = "No camera in face:" + facing;
+            JCameraLog.e(errorMsg);
 
-            Class<?> outputClass = iSurface.getClass();
-            if (iSurface instanceof SurfaceViewPreview) {
-                outputClass = SurfaceHolder.class;
-            }
+            resetStatus();
+            quitHandlerThread();
 
-            if (iSurface instanceof SurfaceTexturePreview) {
-                outputClass = SurfaceTexture.class;
-            }
-
-            if (outputClass != SurfaceHolder.class && outputClass != SurfaceTexture.class) {
-                if (mCallback != null) {
-                    String errorMsg = "iSurface must instanceof SurfaceViewPreview or " +
-                            "SurfaceTexturePreview, iSurface:" + iSurface;
-                    mCallback.onCameraError(CameraCallback.CODE_CONFIG_SIZE_FAILED, errorMsg);
-                }
-                return;
-            }
-
-            android.util.Size[] sizes = map.getOutputSizes(outputClass);
-            if (sizes != null) {
-                for (android.util.Size size : sizes) {
-                    mPreSizeMap.addSize(new Size(size.getWidth(), size.getHeight()));
-                }
-            }
-
-            //记录该摄像头所支持的图片尺寸
-            mPicSizeMap.clear();
-            sizes = map.getOutputSizes(ImageFormat.JPEG);
-            if (sizes != null) {
-                for (android.util.Size size : sizes) {
-                    mPicSizeMap.addSize(new Size(size.getWidth(), size.getHeight()));
-                }
-            }
-        }
-
-        if (mPreSizeMap.isEmpty() || mPicSizeMap.isEmpty()) {
             if (mCallback != null) {
-                mCallback.onCameraError(CameraCallback.CODE_CONFIG_SIZE_FAILED, "mPreSizeMap or mPicSizeMap is null");
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mCallback.onCameraError(CameraCallback.CODE_OPEN_FAILED, errorMsg);
+                    }
+                });
             }
+
             return;
         }
 
         //释放已经打开的摄像头
         if (mCamera != null) {
-            releaseCamera();
+            resetStatus();
         }
 
         try {
-            if (mHandlerThread == null) {
-                mHandlerThread = new HandlerThread("Camera2");
-                mHandlerThread.start();
-                mChildHandler = new Handler(mHandlerThread.getLooper());
-                JCameraLog.d("start handler thread...");
+            mCharacter = mManager.getCameraCharacteristics(cameraId);
+
+            StreamConfigurationMap map = mCharacter.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+            if (map != null) {
+                //记录该摄像头所支持的预览尺寸
+                mPreSizeMap.clear();
+
+                Class<?> outputClass = iSurface.getClass();
+                if (iSurface instanceof SurfaceViewPreview) {
+                    outputClass = SurfaceHolder.class;
+                }
+
+                if (iSurface instanceof SurfaceTexturePreview) {
+                    outputClass = SurfaceTexture.class;
+                }
+
+                if (outputClass != SurfaceHolder.class && outputClass != SurfaceTexture.class) {
+                    if (mCallback != null) {
+                        final String errorMsg = "iSurface must instanceof SurfaceViewPreview or " +
+                                "SurfaceTexturePreview, iSurface:" + iSurface;
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                mCallback.onCameraError(CameraCallback.CODE_CONFIG_SIZE_FAILED, errorMsg);
+                            }
+                        });
+                    }
+                    return;
+                }
+
+                android.util.Size[] sizes = map.getOutputSizes(outputClass);
+                if (sizes != null) {
+                    for (android.util.Size size : sizes) {
+                        mPreSizeMap.addSize(new Size(size.getWidth(), size.getHeight()));
+                    }
+                }
+
+                //记录该摄像头所支持的图片尺寸
+                mPicSizeMap.clear();
+                sizes = map.getOutputSizes(ImageFormat.JPEG);
+                if (sizes != null) {
+                    for (android.util.Size size : sizes) {
+                        mPicSizeMap.addSize(new Size(size.getWidth(), size.getHeight()));
+                    }
+                }
+            }
+
+            if (mPreSizeMap.isEmpty() || mPicSizeMap.isEmpty()) {
+                if (mCallback != null) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            mCallback.onCameraError(CameraCallback.CODE_CONFIG_SIZE_FAILED,
+                                    "mPreSizeMap or mPicSizeMap is null");
+                        }
+                    });
+                }
+                return;
             }
 
             mManager.openCamera(cameraId, mDeviceStateCallback, mChildHandler);
 
+            registerSensor();
+
         } catch (Exception e) {
-            String errorMsg = "Exception e:" + e.getMessage();
+            final String errorMsg = "Exception e:" + e.getMessage();
             JCameraLog.e(errorMsg);
             e.printStackTrace();
+
             resetStatus();
+            quitHandlerThread();
 
             if (mCallback != null) {
-                mCallback.onCameraError(CameraCallback.CODE_OPEN_FAILED, errorMsg);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mCallback.onCameraError(CameraCallback.CODE_OPEN_FAILED, errorMsg);
+                    }
+                });
             }
 
             return;
         }
-
-        registerSensor();
     }
 
     @Override
     public void releaseCamera() {
-        unregisterSensor();
+        if (mCamera == null) {
+            return;
+        }
 
-        if (mSession != null) {
-            mSession.close();
-        }
-        if (mCamera != null) {
-            mCamera.close();
-        }
-        if (mImageReader != null) {
-            mImageReader.close();
-            mImageReader = null;
-        }
+        unregisterSensor();
+        resetStatus();
+        quitHandlerThread();
     }
 
     @Override
@@ -267,15 +333,39 @@ class Camera2 extends BaseCamera {
 
     @Override
     public void startPreview() {
+        startPreview(true);
+    }
+
+    private void startPreview(boolean startAutoFocus) {
         if (mSession == null) {
             return;
         }
 
         try {
+            JCameraLog.d("startPreview...");
             mSession.setRepeatingRequest(mPreviewRequest.build(), mCaptureCallback, mChildHandler);
+            //开始预览，开始自动聚焦
+            isShowingPreview.set(true);
+
+            if (mCallback != null) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mCallback.onStartPreview();
+                    }
+                });
+            }
+
+            if (startAutoFocus) {
+                startAutoFocus();
+            }
 
         } catch (Exception e) {
+            isShowingPreview.set(false);
+
             final String errorMsg = e.getMessage();
+            JCameraLog.e("startPreview error, " + e.getClass() + ":" + errorMsg);
+
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -292,6 +382,9 @@ class Camera2 extends BaseCamera {
 
     }
 
+    /**
+     * 创建session
+     */
     private void createSession() {
         if (mCamera == null || !iSurface.isReady()) {
             return;
@@ -304,8 +397,6 @@ class Camera2 extends BaseCamera {
                 Size largest = mPicSizeMap.get(getAspectRatio()).last();
                 mImageReader = ImageReader.newInstance(largest.width, largest.height, ImageFormat.JPEG, 2);
                 mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, mChildHandler);
-
-//                ((SurfaceViewPreview)iSurface).setb
 
                 if (mPreviewRequest == null) {
                     mPreviewRequest = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
@@ -322,8 +413,10 @@ class Camera2 extends BaseCamera {
 
         } catch (Exception e) {
             final String errorMsg = "Create capture session failed, e:" + e.getMessage();
-            JCameraLog.e("");
+            JCameraLog.e(errorMsg);
             e.printStackTrace();
+
+            releaseCamera();
 
             runOnUiThread(new Runnable() {
                 @Override
@@ -354,7 +447,7 @@ class Camera2 extends BaseCamera {
 
     @Override
     public boolean isShowingPreview() {
-        return false;
+        return isShowingPreview.get();
     }
 
     @Override
@@ -380,7 +473,7 @@ class Camera2 extends BaseCamera {
 
         Set<AspectRatio> ratios = getSupportedAspectRatios();
         if (!ratios.contains(ratio)) {
-            JCameraLog.w(getCameraStr(mCamera) + " unsupport ratio:" + ratio);
+            JCameraLog.w("Unsupported ratio:" + ratio);
             return false;
         }
 
@@ -470,7 +563,7 @@ class Camera2 extends BaseCamera {
     }
 
     @Override
-    public boolean setFlashMode(int flash) {
+    public boolean setFlashMode(@Flash int flash) {
         if (mPreviewRequest == null || mSession == null) {
             return false;
         }
@@ -483,11 +576,10 @@ class Camera2 extends BaseCamera {
 
         if (list.contains(flash)) {
             try {
-
                 mPreviewRequest.set(CaptureRequest.CONTROL_AE_MODE, FLASH_MODES.get(flash));
                 mSession.setRepeatingRequest(mPreviewRequest.build(), null, mChildHandler);
 
-                JCameraLog.d(getCameraStr(mCamera) + " set flash mode as:" + getFlashStr(flash));
+                JCameraLog.d("setFlashMode:" + getFlashStr(flash));
 
                 return true;
 
@@ -497,7 +589,7 @@ class Camera2 extends BaseCamera {
             }
 
         } else {
-            JCameraLog.w(getCameraStr(mCamera) + " unsupport the flash mode:" + FLASH_MODES.get(flash));
+            JCameraLog.w("Unsupported the flash mode:" + FLASH_MODES.get(flash));
         }
 
         return false;
@@ -584,23 +676,54 @@ class Camera2 extends BaseCamera {
         return result;
     }
 
+    /**
+     * 重设一些常量的状态
+     */
     private void resetStatus() {
+        if (mChildHandler != null) {
+            mChildHandler.removeCallbacksAndMessages(null);
+        }
+
+        mPreSizeMap.clear();
+        mPicSizeMap.clear();
+
+        isCameraInUsing.set(false);
+        isShowingPreview.set(false);
+
+        if (mSession != null) {
+            mSession.close();
+            mSession = null;
+        }
+        if (mImageReader != null) {
+            mImageReader.close();
+            mImageReader = null;
+        }
+        if (mCamera != null) {
+            JCameraLog.d("release " + getCameraStr(mCamera));
+            mCamera.close();
+            mCamera = null;
+        }
+
+        mCharacter = null;
+        mPreviewRequest = null;
+    }
+
+    /**
+     * 退出HandlerThread，只有在{@link #releaseCamera()}或者发生异常的时候才调用<br>
+     * 注：在退出HandlerThread之前，一般都要调用{@link #resetStatus()}重置其他常量的状态
+     */
+    private void quitHandlerThread() {
         if (mChildHandler != null) {
             mChildHandler.removeCallbacksAndMessages(null);
             mChildHandler = null;
         }
 
         if (mHandlerThread != null) {
+            JCameraLog.d("Quit handler thread:(" + mHandlerThread.getName()
+                    + ":" + mHandlerThread.getId() + ")");
             mHandlerThread.quitSafely();
             mHandlerThread = null;
-            JCameraLog.d("Handler thread quit safely...");
         }
-
-        mPreSizeMap.clear();
-        mPicSizeMap.clear();
-
-        mCamera = null;
-        mCharacter = null;
     }
 
     /**
@@ -677,8 +800,7 @@ class Camera2 extends BaseCamera {
 
         @Override
         public void onClosed(@NonNull CameraDevice camera) {
-            JCameraLog.d("release " + getCameraStr(camera));
-            resetStatus();
+            JCameraLog.d(getCameraStr(camera) + " closed.");
 
             runOnUiThread(new Runnable() {
                 @Override
@@ -694,7 +816,9 @@ class Camera2 extends BaseCamera {
         @Override
         public void onError(@NonNull CameraDevice camera, final int error) {
             JCameraLog.e("onError " + getCameraStr(camera) + ", errorCode:" + error);
+
             resetStatus();
+            quitHandlerThread();
 
             runOnUiThread(new Runnable() {
                 @Override
@@ -712,38 +836,22 @@ class Camera2 extends BaseCamera {
 
         @Override
         public void onConfigured(@NonNull CameraCaptureSession session) {
+            JCameraLog.d("on session configured...");
             mSession = session;
             startPreview();
         }
 
         @Override
-        public void onSurfacePrepared(@NonNull CameraCaptureSession session, @NonNull Surface surface) {
-            super.onSurfacePrepared(session, surface);
-        }
-
-        @Override
         public void onConfigureFailed(@NonNull CameraCaptureSession session) {
-
-        }
-
-        @Override
-        public void onReady(@NonNull CameraCaptureSession session) {
-            super.onReady(session);
-        }
-
-        @Override
-        public void onActive(@NonNull CameraCaptureSession session) {
-            super.onActive(session);
-        }
-
-        @Override
-        public void onCaptureQueueEmpty(@NonNull CameraCaptureSession session) {
-            super.onCaptureQueueEmpty(session);
+            JCameraLog.w("on session configure failed...");
         }
 
         @Override
         public void onClosed(@NonNull CameraCaptureSession session) {
-            mSession = null;
+            JCameraLog.d("on session closed...");
+            if (mSession != null && mSession.equals(session)) {
+                mSession = null;
+            }
         }
     };
 

@@ -5,8 +5,9 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.view.View;
+import android.view.animation.AlphaAnimation;
+import android.view.animation.Animation;
 import android.view.animation.LinearInterpolator;
-import android.view.animation.TranslateAnimation;
 
 import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
@@ -42,7 +43,7 @@ class MaskScanView extends BaseMaskView {
     private Paint mMaskPaint;
     private Paint mShadowPaint;
 
-    private TranslateAnimation mMaskAnimator;
+    private Animation mMaskAnimator;
 
     public MaskScanView(@NonNull Context context) {
         super(context);
@@ -115,7 +116,8 @@ class MaskScanView extends BaseMaskView {
         maskView.setBackgroundColor(maskColor);
         maskView.setVisibility(showMask ? VISIBLE : GONE);
 
-        mMaskAnimator = new TranslateAnimation(0, 0, top - bottom, bottom - top);
+        //mMaskAnimator = new TranslateAnimation(0, 0, top - bottom, bottom - top);
+        mMaskAnimator = new AlphaAnimation(1.0f, 0.2f);
         mMaskAnimator.setRepeatCount(-1);
         mMaskAnimator.setDuration(maskDuration);
         mMaskAnimator.setInterpolator(new LinearInterpolator());

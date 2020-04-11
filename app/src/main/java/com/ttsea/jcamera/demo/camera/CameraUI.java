@@ -1,9 +1,7 @@
 package com.ttsea.jcamera.demo.camera;
 
-import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.KeyEvent;
@@ -35,13 +33,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 
 public class CameraUI extends AppCompatActivity implements RecordButton.GestureCallback {
     private final String TAG = "CameraUI";
@@ -56,6 +51,8 @@ public class CameraUI extends AppCompatActivity implements RecordButton.GestureC
 
     private boolean cameraOpened;
     private SaveStatus saveStatus;
+
+    private File videoFile;
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
@@ -112,8 +109,8 @@ public class CameraUI extends AppCompatActivity implements RecordButton.GestureC
                 String errorMsg = "errorCode:" + errorCode + ", msg:" + msg;
                 JLog.e(TAG, "onCameraError, " + errorMsg);
                 Toast.makeText(mActivity, errorMsg, Toast.LENGTH_SHORT).show();
-
-                finish();
+                cameraOpened = false;
+                //finish();
             }
 
             @Override
@@ -121,12 +118,18 @@ public class CameraUI extends AppCompatActivity implements RecordButton.GestureC
                 JLog.d(TAG, "onPictureTaken...");
 
                 if (file == null) {
-                    Toast.makeText(mActivity, errorMsg, Toast.LENGTH_SHORT).show();
+                    //Toast.makeText(mActivity, errorMsg, Toast.LENGTH_SHORT).show();
                     return;
                 }
 
                 String msg = "图片已保存至:" + file.getAbsolutePath();
                 Toast.makeText(mActivity, msg, Toast.LENGTH_SHORT).show();
+            }
+
+            @Override
+            public void onRecordError(String errorMsg) {
+                Toast.makeText(mActivity, errorMsg, Toast.LENGTH_SHORT).show();
+                videoFile = null;
             }
         });
 
@@ -136,35 +139,10 @@ public class CameraUI extends AppCompatActivity implements RecordButton.GestureC
         saveStatus.ratio = cameraView.getAspectRatio();
     }
 
-    private void tryOpenCamera() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-                == PackageManager.PERMISSION_GRANTED) {
-            cameraView.openCamera(saveStatus.facing);
-        } else {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, 8);
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        switch (requestCode) {
-            case 8:
-                if (permissions.length != 1 || grantResults.length != 1) {
-                    throw new RuntimeException("Error on requesting camera permission.");
-                }
-                if (grantResults[0] != PackageManager.PERMISSION_GRANTED) {
-                    Toast.makeText(this, "没有相机权限", Toast.LENGTH_SHORT).show();
-                } else {
-                    tryOpenCamera();
-                }
-                break;
-        }
-    }
-
     @Override
     protected void onResume() {
         super.onResume();
-        tryOpenCamera();
+        cameraView.openCamera(saveStatus.facing);
     }
 
     @Override
@@ -290,10 +268,13 @@ public class CameraUI extends AppCompatActivity implements RecordButton.GestureC
                 return true;
 
             case R.id.switch_camera:
-                if (cameraView.getFacing() == Constants.FACING_FRONT) {
-                    cameraView.openCamera(Constants.FACING_BACK);
-                } else {
-                    cameraView.openCamera(Constants.FACING_FRONT);
+                if (cameraOpened) {
+                    cameraOpened = false;
+                    if (cameraView.getFacing() == Constants.FACING_FRONT) {
+                        cameraView.openCamera(Constants.FACING_BACK);
+                    } else {
+                        cameraView.openCamera(Constants.FACING_FRONT);
+                    }
                 }
                 return true;
         }
@@ -416,12 +397,16 @@ public class CameraUI extends AppCompatActivity implements RecordButton.GestureC
 
     @Override
     public void startRecord() {
-        File file = new File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), "video.mp4");
-        cameraView.startRecord(file);
+        videoFile = new File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), "video.mp4");
+        cameraView.startRecord(videoFile);
     }
 
     @Override
     public void stopRecord() {
         cameraView.stopRecord();
+        if (videoFile != null) {
+            String msg = "图片已保存至:" + videoFile.getAbsolutePath();
+            Toast.makeText(mActivity, msg, Toast.LENGTH_SHORT).show();
+        }
     }
 }

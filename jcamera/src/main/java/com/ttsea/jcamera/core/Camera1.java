@@ -14,7 +14,6 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.SparseIntArray;
 import android.view.Surface;
-import android.view.View;
 
 import com.ttsea.jcamera.annotation.Facing;
 import com.ttsea.jcamera.callbacks.CameraCallback;
@@ -32,7 +31,6 @@ import androidx.collection.SparseArrayCompat;
 @SuppressWarnings("deprecation")
 class Camera1 extends BaseCamera {
     private final int DEFAULT_CAMERA_ID = -1;
-    private final AspectRatio DEFAULT_RATIO = AspectRatio.parse("16:9");
 
     private Context mContext;
 
@@ -112,7 +110,7 @@ class Camera1 extends BaseCamera {
     }
 
     /**
-     * see {@link #openCamera(int)}
+     * 在子线程中开启摄像头<br>
      */
     private void openCameraInThread(@Facing int facing) {
         if (!Utils.checkCameraHardware(mContext)) {
@@ -126,8 +124,10 @@ class Camera1 extends BaseCamera {
                     }
                 });
             }
+
+            JCameraLog.e(errorMsg);
             resetStatus();
-            JCameraLog.d(errorMsg);
+            quitHandlerThread();
             return;
         }
 
@@ -146,15 +146,7 @@ class Camera1 extends BaseCamera {
 
         //释放已经打开的摄像头
         if (mCamera != null) {
-            mChildHandler.removeCallbacksAndMessages(null);
-
-            isCameraInUsing.set(false);
-            isShowingPreview.set(false);
-
-            mCamera.release();
-            mCameraId = DEFAULT_CAMERA_ID;
-            mCamera = null;
-            mParams = null;
+            resetStatus();
         }
 
         try {
@@ -174,6 +166,7 @@ class Camera1 extends BaseCamera {
             e.printStackTrace();
 
             resetStatus();
+            quitHandlerThread();
 
             if (mCallback != null) {
                 runOnUiThread(new Runnable() {
@@ -191,6 +184,7 @@ class Camera1 extends BaseCamera {
             JCameraLog.e(errorMsg);
 
             resetStatus();
+            quitHandlerThread();
 
             if (mCallback != null) {
                 runOnUiThread(new Runnable() {
@@ -249,9 +243,8 @@ class Camera1 extends BaseCamera {
 
         unregisterSensor();
 
-        mCamera.release();
         resetStatus();
-        JCameraLog.d("release " + getCameraStr(mCameraId));
+        quitHandlerThread();
 
         runOnUiThread(new Runnable() {
             @Override
@@ -283,7 +276,7 @@ class Camera1 extends BaseCamera {
 
     /** 在子线程中启动自动聚焦 */
     private void startAutoFocusInThread() {
-        if (mCamera == null || mChildHandler == null || isCameraInUsing.get()) {
+        if (mCamera == null || mChildHandler == null) {
             return;
         }
 
@@ -300,7 +293,7 @@ class Camera1 extends BaseCamera {
         if (focusMode.equals(Camera.Parameters.FOCUS_MODE_INFINITY)
                 || focusMode.equals(Camera.Parameters.FOCUS_MODE_FIXED)
                 || focusMode.equals(Camera.Parameters.FOCUS_MODE_EDOF)) {
-            JCameraLog.d("focusMode:" + focusMode + ", should not call autoFocus.");
+            JCameraLog.d(getCameraStr(mCameraId) + " focusMode:" + focusMode + ", will not call autoFocus.");
             return;
         }
 
@@ -443,7 +436,7 @@ class Camera1 extends BaseCamera {
 
         mParams.setPreviewSize(preSize.width, preSize.height);
         mParams.setPictureSize(picSize.width, picSize.height);
-        JCameraLog.d("setPreviewSize:" + preSize + ", setPictureSize:" + picSize);
+        JCameraLog.d("setAspectRatio:" + ratio + ", setPreviewSize:" + preSize + ", setPictureSize:" + picSize);
 
         updateCameraParams(true);
         startAutoFocus();
@@ -453,12 +446,12 @@ class Camera1 extends BaseCamera {
     @Override
     public AspectRatio getAspectRatio() {
         if (mParams == null) {
-            return DEFAULT_RATIO;
+            return Utils.getScreenRatio(mContext);
         }
 
         Camera.Size size = mParams.getPreviewSize();
         if (size == null || size.width <= 0 || size.height <= 0) {
-            return DEFAULT_RATIO;
+            return Utils.getScreenRatio(mContext);
         }
 
         return AspectRatio.of(size.width, size.height);
@@ -544,6 +537,7 @@ class Camera1 extends BaseCamera {
         List<Integer> list = getSupportedFlashModes();
 
         if (list.contains(flash)) {
+            JCameraLog.d("setFlashMode:" + FLASH_MODES.get(flash));
             mParams.setFlashMode(FLASH_MODES.get(flash));
             updateCameraParams(false);
             return true;
@@ -678,6 +672,7 @@ class Camera1 extends BaseCamera {
         }
 
         try {
+
             mMediaRecorder = new MediaRecorder();
 
             mParams.setRecordingHint(true);
@@ -691,8 +686,11 @@ class Camera1 extends BaseCamera {
             mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
 
             CamcorderProfile profile = getCamcorderProfile();
-            profile.videoBitRate = 2000000;
-            profile.videoFrameRate = 24;
+
+            //这里的值暂时不宜随便改动，有些机型是不支持的
+            //profile.videoBitRate = 10000000;
+            //profile.videoFrameRate = 24;
+
             mMediaRecorder.setProfile(profile);
             JCameraLog.d("CamcorderProfile:" + getCamcorderProfileStr(profile));
 
@@ -700,7 +698,7 @@ class Camera1 extends BaseCamera {
             mMediaRecorder.setOutputFile(outputFile.getAbsolutePath());
 
             //设置旋转角度
-            int rotation = Utils.getRotation((View) iMaskView);
+            int rotation = DisplayUtils.getRotation(mContext);
             int degrees = getCameraRotationDegrees(rotation);
             //前置摄像头和后置摄像头的旋转角度相对屏幕来说是不一样的
             if (getFacing() == Constants.FACING_FRONT) {
@@ -708,15 +706,26 @@ class Camera1 extends BaseCamera {
             }
             mMediaRecorder.setOrientationHint(degrees);
 
+
             mMediaRecorder.prepare();
             mMediaRecorder.start();
             isCameraInUsing.set(true);
 
         } catch (Exception e) {
-            JCameraLog.e("Exception e:" + e.getMessage());
+            final String errorMsg = e.getMessage();
+            JCameraLog.e("Exception e:" + errorMsg);
             e.printStackTrace();
 
             stopRecord();
+
+            if (mCallback != null) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mCallback.onRecordError(errorMsg);
+                    }
+                });
+            }
         }
     }
 
@@ -949,17 +958,16 @@ class Camera1 extends BaseCamera {
                         int format = mParams.getPreviewFormat();
                         Camera.Size size = mParams.getPreviewSize();
 
-                        int ration = Utils.getRotation((View) iMaskView);
-                        if (ration == 0 || ration == 2) {
+                        if (DisplayUtils.isLandscape(mContext)) {
+                            mCallback.oneShotFrameData(data, format, size.width, size.height);
+                            JCameraLog.d("onPreviewFrame, format:" + format
+                                    + ", size:" + size.width + ":" + size.height);
+
+                        } else {
                             data = rotateYUV420Degree90(data, size.width, size.height);
                             mCallback.oneShotFrameData(data, format, size.height, size.width);
                             JCameraLog.d("onPreviewFrame, format:" + format
                                     + ", size:" + size.height + ":" + size.width);
-
-                        } else {
-                            mCallback.oneShotFrameData(data, format, size.width, size.height);
-                            JCameraLog.d("onPreviewFrame, format:" + format
-                                    + ", size:" + size.width + ":" + size.height);
                         }
                     }
                 }
@@ -986,9 +994,17 @@ class Camera1 extends BaseCamera {
         }
         onActivityRotation(rotation);
 
-        //设置比例
+        //设置比例，先去屏幕比例
+        //如果不支持，则依次取 16:9 和 4:3
+        //如果以上都不支持，则取ratioSet最后一个
         Set<AspectRatio> ratioSet = getSupportedAspectRatios();
-        AspectRatio ratio = DEFAULT_RATIO;
+        AspectRatio ratio = Utils.getScreenRatio(mContext);
+        if (!ratioSet.contains(ratio)) {
+            ratio = AspectRatio.parse("16:9");
+        }
+        if (!ratioSet.contains(ratio)) {
+            ratio = AspectRatio.parse("4:3");
+        }
         if (!ratioSet.contains(ratio)) {
             for (AspectRatio r : ratioSet) {
                 ratio = r;
@@ -1026,13 +1042,13 @@ class Camera1 extends BaseCamera {
             mParams.setVideoStabilization(true);
         }
 
+        updateCameraParams(false);
+
         JCameraLog.d("adjustCameraParams, ratio:" + ratio
                 + ", preSize:" + preSize
                 + ", picSize:" + picSize
                 + ", flash:" + mParams.getFlashMode()
                 + ", focus:" + mParams.getFocusMode());
-
-        updateCameraParams(false);
     }
 
     /**
@@ -1050,7 +1066,7 @@ class Camera1 extends BaseCamera {
             mCamera.setParameters(mParams);
         } catch (Exception e) {
             JCameraLog.w("Exception e:" + e.getMessage());
-            e.printStackTrace();
+            //e.printStackTrace();
         }
 
         if (rePreview && isShowingPreview.get()) {
@@ -1130,14 +1146,6 @@ class Camera1 extends BaseCamera {
     private void resetStatus() {
         if (mChildHandler != null) {
             mChildHandler.removeCallbacksAndMessages(null);
-            mChildHandler = null;
-        }
-
-        if (mHandlerThread != null) {
-            JCameraLog.d("Quit handler thread:(" + mHandlerThread.getName()
-                    + ":" + mHandlerThread.getId() + ")");
-            mHandlerThread.quit();
-            mHandlerThread = null;
         }
 
         mPreSizeMap.clear();
@@ -1148,10 +1156,33 @@ class Camera1 extends BaseCamera {
 
         if (mCamera != null) {
             mCamera.release();
+            mCamera = null;
+            JCameraLog.d("release " + getCameraStr(mCameraId));
         }
         mCameraId = DEFAULT_CAMERA_ID;
-        mCamera = null;
         mParams = null;
+    }
+
+    /**
+     * 退出HandlerThread，只有在{@link #releaseCamera()}或者发生异常的时候才调用<br>
+     * 注：在退出HandlerThread之前，一般都要调用{@link #resetStatus()}重置其他常量的状态
+     */
+    private void quitHandlerThread() {
+        if (mChildHandler != null) {
+            mChildHandler.removeCallbacksAndMessages(null);
+            mChildHandler = null;
+        }
+
+        if (mHandlerThread != null) {
+            JCameraLog.d("Quit handler thread:(" + mHandlerThread.getName()
+                    + ":" + mHandlerThread.getId() + ")");
+            if (Build.VERSION.SDK_INT >= 18) {
+                mHandlerThread.quitSafely();
+            } else {
+                mHandlerThread.quit();
+            }
+            mHandlerThread = null;
+        }
     }
 
     /**

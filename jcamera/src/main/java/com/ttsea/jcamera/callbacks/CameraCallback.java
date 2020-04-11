@@ -62,6 +62,14 @@ public interface CameraCallback {
     void onPictureTaken(@Nullable File picFile, String errorMsg);
 
     /**
+     * 录像异常<br>
+     * 在主线程中回调
+     *
+     * @param errorMsg 错误信息
+     */
+    void onRecordError(String errorMsg);
+
+    /**
      * 捕捉一帧数据，这里返回的数据是已经处理好旋转角度的byte[]数据<br>
      * 将会在子程中回调
      *

@@ -47,8 +47,7 @@
 
         <activity
             android:name=".scan.ScanUI"
-            android:label="ScanQR"
-            android:theme="@style/AppTheme.FullScreen" />
+            android:label="Scan" />
 
     </application>
 

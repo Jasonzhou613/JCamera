@@ -25,4 +25,6 @@
 
     </FrameLayout>
 
+    <include layout="@layout/toolbar_view" />
+
 </FrameLayout>
